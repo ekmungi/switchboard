@@ -30,7 +30,28 @@ _MODEL_B = Model(
     completion_price=0.0000025,  # 2.50 per million
 )
 
+# Large context model used as the primary acceptance target (Task 5 catalog).
+_MODEL_V4 = Model(
+    id="deepseek/deepseek-v4-flash",
+    name="DeepSeek V4 Flash",
+    context_length=1048576,
+    prompt_price=0.0000001,   # 0.10 per million
+    completion_price=0.0000003,
+)
+
+# Small model: context below the 64K guard minimum (32K).
+_MODEL_SMALL = Model(
+    id="x/small",
+    name="Tiny",
+    context_length=32768,
+    prompt_price=0.0000001,
+    completion_price=0.0000002,
+)
+
 _MODELS_TWO = [_MODEL_A, _MODEL_B]
+
+# Extended catalog used for Task-5 guard tests.
+_MODELS_GUARD = [_MODEL_A, _MODEL_B, _MODEL_V4, _MODEL_SMALL]
 
 
 @pytest.fixture(autouse=True)
@@ -142,73 +163,137 @@ def test_cmd_providers_md_output_exact(capsys):
 
 
 # ---------------------------------------------------------------------------
-# cmd_use
+# cmd_use  (Task 5: guarded behavior -- real validate_model, not stubbed)
 # ---------------------------------------------------------------------------
+# Catalog: _MODELS_GUARD contains one >=64K model (deepseek-v4-flash, 1M ctx),
+# two >=64K models (deepseek-chat 131K, deepseek-r1 163K), and one too-small
+# model (x/small, 32K).  The real guard runs; only fetch_models is patched.
 
 
 def test_cmd_use_unknown_model_exits_1(monkeypatch, capsys):
-    """cmd_use with an unknown model_id prints error and exits 1.
+    """cmd_use with a model not in catalog prints the guard reason + suggestions, exits 1.
 
-    write_config and restart_ccr must NOT be called.
+    set_all_roles, ensure_apikey_blank, write_config, restart_ccr must NOT be called.
+    The real validate_model runs (no stub on the guard).
     """
-    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
-    write_called = []
-    restart_called = []
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_GUARD))
+    set_all_roles_calls: list = []
+    ensure_calls: list = []
+    write_called: list = []
+    restart_called: list = []
+    monkeypatch.setattr(cli, "set_all_roles",
+                        lambda cfg, mid, online=False: set_all_roles_calls.append((cfg, mid, online)) or cfg)
+    monkeypatch.setattr(cli, "ensure_apikey_blank",
+                        lambda cfg: ensure_calls.append(cfg) or cfg)
     monkeypatch.setattr(cli, "write_config", lambda cfg: write_called.append(cfg))
     monkeypatch.setattr(cli, "restart_ccr", lambda: restart_called.append(True))
 
     with pytest.raises(SystemExit) as exc_info:
-        cli.cmd_use("openai/gpt-4-turbo")
+        cli.cmd_use("nope/nope")
 
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
-    assert "'openai/gpt-4-turbo' is not in the OpenRouter catalog." in out
-    assert "Try: sb list openai" in out
+    # Guard must print the reason (unknown id message)
+    assert "'nope/nope' is not in the OpenRouter catalog." in out
+    # Suggestions header must appear (there are valid models in catalog)
+    assert "Nearest valid alternatives:" in out
+    # None of the write-path functions must be invoked
+    assert set_all_roles_calls == []
+    assert ensure_calls == []
     assert write_called == []
     assert restart_called == []
 
 
-def test_cmd_use_known_model_sets_all_roles(monkeypatch, capsys):
-    """cmd_use with a valid model_id calls set_all_roles(online=True), write_config, restart_ccr."""
-    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
+def test_cmd_use_too_small_model_exits_1(monkeypatch, capsys):
+    """cmd_use with a model whose context < 64K prints the guard reason, exits 1.
 
-    dummy_cfg = {"Router": {}}
-    updated_cfg = {"Router": {"default": "openrouter,deepseek/deepseek-chat"}}
+    The real validate_model runs and catches the too-small context failure.
+    No config writes or CCR restarts happen.
+    """
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_GUARD))
+    write_called: list = []
+    restart_called: list = []
+    monkeypatch.setattr(cli, "write_config", lambda cfg: write_called.append(cfg))
+    monkeypatch.setattr(cli, "restart_ccr", lambda: restart_called.append(True))
 
-    set_all_roles_calls = []
+    with pytest.raises(SystemExit) as exc_info:
+        cli.cmd_use("x/small")
 
-    def fake_read_config():
+    assert exc_info.value.code == 1
+    out = capsys.readouterr().out
+    # Guard reason must mention the context size
+    assert "32,768" in out or "32768" in out
+    assert "minimum" in out
+    assert write_called == []
+    assert restart_called == []
+
+
+def test_cmd_use_valid_model_uses_online_false(monkeypatch, capsys):
+    """cmd_use with a valid >=64K model calls set_all_roles(online=False), not True.
+
+    This is the deliberate Task-5 safety change: webSearch is set WITHOUT :online
+    by default so there is no surprise web billing.  ensure_apikey_blank is also
+    called, and write_config is called before restart_ccr.
+    """
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_GUARD))
+
+    dummy_cfg: dict = {"Router": {}}
+    after_roles_cfg: dict = {"Router": {"default": "openrouter,deepseek/deepseek-v4-flash"}}
+    after_apikey_cfg: dict = {**after_roles_cfg, "APIKEY": ""}
+
+    call_log: list = []
+
+    def fake_read_config() -> dict:
         """Return a dummy config."""
         return dummy_cfg
 
-    def fake_set_all_roles(cfg, model_id, online=False):
-        """Record arguments and return an updated config."""
-        set_all_roles_calls.append((cfg, model_id, online))
-        return updated_cfg
+    def fake_set_all_roles(cfg: dict, model_id: str, online: bool = False) -> dict:
+        """Record arguments; return a modified config."""
+        call_log.append(("set_all_roles", model_id, online))
+        return after_roles_cfg
 
-    write_calls = []
-    restart_calls = []
+    def fake_ensure_apikey_blank(cfg: dict) -> dict:
+        """Record call; return config with APIKEY blanked."""
+        call_log.append(("ensure_apikey_blank",))
+        return after_apikey_cfg
+
+    def fake_write_config(cfg: dict) -> None:
+        """Record the config passed in."""
+        call_log.append(("write_config", cfg))
+
+    def fake_restart_ccr() -> None:
+        """Record the restart call."""
+        call_log.append(("restart_ccr",))
+
     monkeypatch.setattr(cli, "read_config", fake_read_config)
     monkeypatch.setattr(cli, "set_all_roles", fake_set_all_roles)
-    monkeypatch.setattr(cli, "write_config", lambda cfg: write_calls.append(cfg))
-    monkeypatch.setattr(cli, "restart_ccr", lambda: restart_calls.append(True))
+    monkeypatch.setattr(cli, "ensure_apikey_blank", fake_ensure_apikey_blank)
+    monkeypatch.setattr(cli, "write_config", fake_write_config)
+    monkeypatch.setattr(cli, "restart_ccr", fake_restart_ccr)
 
-    cli.cmd_use("deepseek/deepseek-chat")
+    cli.cmd_use("deepseek/deepseek-v4-flash")
 
     out = capsys.readouterr().out
-    expected = "Pinned all roles to deepseek/deepseek-chat (webSearch -> deepseek/deepseek-chat:online).\n"
-    assert out == expected
 
-    # set_all_roles must be called with online=True
-    assert len(set_all_roles_calls) == 1
-    _, called_model, called_online = set_all_roles_calls[0]
-    assert called_model == "deepseek/deepseek-chat"
-    assert called_online is True
+    # Confirmation must mention the model, context size, and background role
+    assert "deepseek/deepseek-v4-flash" in out
+    assert "1,048,576" in out or "1048576" in out
+    assert "background" in out
 
-    # write_config gets the updated cfg returned by set_all_roles
-    assert write_calls == [updated_cfg]
-    # restart_ccr was invoked
-    assert restart_calls == [True]
+    # set_all_roles must be called with online=False (the safety default)
+    assert call_log[0] == ("set_all_roles", "deepseek/deepseek-v4-flash", False)
+
+    # ensure_apikey_blank must be called after set_all_roles
+    assert call_log[1] == ("ensure_apikey_blank",)
+
+    # write_config must be called with the result of ensure_apikey_blank
+    assert call_log[2] == ("write_config", after_apikey_cfg)
+
+    # restart_ccr must be called last
+    assert call_log[3] == ("restart_ccr",)
+
+    # Total call count
+    assert len(call_log) == 4
 
 
 # ---------------------------------------------------------------------------

@@ -29,10 +29,12 @@ from .ccr_config import (
     read_config,
     write_config,
     set_all_roles,
+    ensure_apikey_blank,
     restart_ccr,
     CONFIG_PATH,
     ROLES,
 )
+from .guard import validate_model
 
 _MARKDOWN: bool = False  # set by --md: emit markdown tables (used by the /catalog slash command)
 
@@ -108,22 +110,39 @@ def cmd_list(query: str) -> None:
 
 
 def cmd_use(model_id: str) -> None:
-    """Pin every CCR role to model_id (webSearch gets :online) and restart CCR.
+    """Pin every CCR role to model_id and restart CCR.
+
+    Validates the model against the live catalog before writing anything.
+    Refuses (exit 1, no writes, no restart) when the model is unknown or
+    has a context window below the 64K minimum.  On success, webSearch is
+    set WITHOUT the :online suffix (no surprise web billing) and the top-level
+    APIKEY is kept blank so CCR auth uses the Providers entry only.
 
     Args:
-        model_id: A valid OpenRouter model id (e.g. 'deepseek/deepseek-chat').
+        model_id: A valid OpenRouter model id (e.g. 'deepseek/deepseek-v4-flash').
 
-    Exits with code 1 if model_id is not found in the live catalog.
+    Exits with code 1 if validation fails.
     """
-    ids = {m.id for m in fetch_models()}
-    if model_id not in ids:
-        print(f"'{model_id}' is not in the OpenRouter catalog.")
-        print(f"Try: sb list {model_id.split('/')[0]}")
+    catalog = fetch_models()
+    verdict = validate_model(model_id, catalog)
+    if not verdict.ok:
+        print(verdict.reason)
+        if verdict.suggestions:
+            print("Nearest valid alternatives:")
+            for s in verdict.suggestions:
+                print(f"  {s}")
         sys.exit(1)
+
+    model = next(m for m in catalog if m.id == model_id)
     cfg = read_config()
-    cfg = set_all_roles(cfg, model_id, online=True)
+    cfg = set_all_roles(cfg, model_id, online=False)
+    cfg = ensure_apikey_blank(cfg)
     write_config(cfg)
-    print(f"Pinned all roles to {model_id} (webSearch -> {model_id}:online).")
+    print(f"Model: {model_id}")
+    print(f"Context: {model.context_length:,} tokens")
+    print("All roles (incl. background) pinned -- no Haiku leak.")
+    print("webSearch set without :online (no surprise web billing).")
+    print("CCR APIKEY kept blank.")
     restart_ccr()
 
 
