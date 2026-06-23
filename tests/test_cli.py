@@ -196,8 +196,8 @@ def test_cmd_use_known_model_sets_all_roles(monkeypatch, capsys):
     cli.cmd_use("deepseek/deepseek-chat")
 
     out = capsys.readouterr().out
-    assert "Pinned all roles to deepseek/deepseek-chat" in out
-    assert "webSearch -> deepseek/deepseek-chat:online" in out
+    expected = "Pinned all roles to deepseek/deepseek-chat (webSearch -> deepseek/deepseek-chat:online).\n"
+    assert out == expected
 
     # set_all_roles must be called with online=True
     assert len(set_all_roles_calls) == 1
