@@ -188,7 +188,8 @@ def test_run_checks_fails_when_role_has_small_context_model():
     checks = run_checks(cfg, catalog, ccr_up=True)
     bg = next(c for c in checks if c.name == "role background")
     assert bg.ok is False
-    assert "context" in bg.detail.lower() or str(_MODEL_SMALL.context_length) in bg.detail
+    assert "context" in bg.detail.lower()
+    assert f"{_MODEL_SMALL.context_length:,}" in bg.detail
 
 
 def test_run_checks_fails_when_role_has_anthropic_model():

@@ -7,7 +7,7 @@
 import pytest
 from switchboard.catalog import Model
 from switchboard.health import (
-    _role_model,
+    role_model,
     model_problem,
     effective_model,
     apikey_blank,
@@ -78,33 +78,33 @@ _CFG_GOOD = {
 
 
 # ---------------------------------------------------------------------------
-# _role_model
+# role_model
 # ---------------------------------------------------------------------------
 
 
 def test_role_model_strips_provider_prefix_and_online():
-    """_role_model extracts the bare model id from a full CCR role value."""
-    assert _role_model("openrouter,deepseek/deepseek-v4-flash:online") == "deepseek/deepseek-v4-flash"
+    """role_model extracts the bare model id from a full CCR role value."""
+    assert role_model("openrouter,deepseek/deepseek-v4-flash:online") == "deepseek/deepseek-v4-flash"
 
 
 def test_role_model_strips_provider_prefix_no_online():
-    """_role_model handles a value without the :online suffix."""
-    assert _role_model("openrouter,deepseek/deepseek-chat") == "deepseek/deepseek-chat"
+    """role_model handles a value without the :online suffix."""
+    assert role_model("openrouter,deepseek/deepseek-chat") == "deepseek/deepseek-chat"
 
 
 def test_role_model_no_comma_strips_online_only():
-    """_role_model treats the full string as the model id when no comma present."""
-    assert _role_model("deepseek/deepseek-chat:online") == "deepseek/deepseek-chat"
+    """role_model treats the full string as the model id when no comma present."""
+    assert role_model("deepseek/deepseek-chat:online") == "deepseek/deepseek-chat"
 
 
 def test_role_model_no_comma_no_online():
-    """_role_model with bare model id and no comma or :online returns it unchanged."""
-    assert _role_model("deepseek/deepseek-chat") == "deepseek/deepseek-chat"
+    """role_model with bare model id and no comma or :online returns it unchanged."""
+    assert role_model("deepseek/deepseek-chat") == "deepseek/deepseek-chat"
 
 
 def test_role_model_preserves_slashes():
-    """_role_model does not disturb slashes within the model id."""
-    assert _role_model("openrouter,provider/sub/model") == "provider/sub/model"
+    """role_model does not disturb slashes within the model id."""
+    assert role_model("openrouter,provider/sub/model") == "provider/sub/model"
 
 
 # ---------------------------------------------------------------------------

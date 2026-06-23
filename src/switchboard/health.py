@@ -9,6 +9,7 @@ from .ccr_config import ROLES
 from .guard import MIN_CONTEXT
 
 __all__ = [
+    "role_model",
     "model_problem",
     "effective_model",
     "apikey_blank",
@@ -18,7 +19,7 @@ __all__ = [
 ]
 
 
-def _role_model(role_value: str) -> str:
+def role_model(role_value: str) -> str:
     """Return the bare OpenRouter model id from a CCR role value.
 
     Strips the leading '<provider>,' prefix (up to the first comma) and any
@@ -59,7 +60,7 @@ def effective_model(cfg: dict) -> str | None:
     """
     router: dict = cfg.get("Router", {})
     ids = {
-        _role_model(router[role])
+        role_model(router[role])
         for role in ROLES
         if role in router
     }
@@ -148,7 +149,7 @@ def role_warnings(cfg: dict, catalog: list[Model]) -> list[str]:
     for role in ROLES:
         if role not in router:
             continue
-        model = _role_model(router[role])
+        model = role_model(router[role])
         p = model_problem(model, catalog)
         if p:
             warnings.append(f"{role}: '{model}' {p}")

@@ -7,7 +7,7 @@ from dataclasses import dataclass
 
 from .catalog import Model
 from .ccr_config import ROLES
-from .health import apikey_blank, websearch_online, model_problem, _role_model
+from .health import apikey_blank, websearch_online, model_problem, role_model
 
 __all__ = ["Check", "run_checks", "format_checks"]
 
@@ -76,7 +76,7 @@ def run_checks(cfg: dict, catalog: list[Model], ccr_up: bool) -> list[Check]:
     for role in ROLES:
         if role not in router:
             continue
-        model = _role_model(router[role])
+        model = role_model(router[role])
         p = model_problem(model, catalog)
         role_ok = p is None
         checks.append(Check(

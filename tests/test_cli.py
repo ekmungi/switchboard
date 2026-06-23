@@ -83,86 +83,6 @@ def test_print_table_markdown_branch(capsys):
 
 
 # ---------------------------------------------------------------------------
-# cmd_list: markdown output -- exact byte guard for /catalog
-# ---------------------------------------------------------------------------
-
-
-def test_cmd_list_md_output_exact(monkeypatch, capsys):
-    """cmd_list in markdown mode produces byte-for-byte identical output for /catalog.
-
-    Sorted ascending by $IN/M: deepseek-chat (0.20) before deepseek-r1 (0.70).
-    """
-    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
-    cli._MARKDOWN = True
-
-    cli.cmd_list("deepseek")
-
-    out = capsys.readouterr().out
-    expected = (
-        "\n"
-        "2 model(s) matching 'deepseek':\n"
-        "Switch in a session:         /model openrouter,<MODEL>\n"
-        "Web search (append :online): /model openrouter,<MODEL>:online\n"
-        "Set as default (terminal):   sb use <MODEL>\n"
-        "\n"
-        "| MODEL  (paste after 'openrouter,') | CTX | $IN/M | $OUT/M |\n"
-        "| --- | --- | --- | --- |\n"
-        "| deepseek/deepseek-chat | 131072 | 0.20 | 0.80 |\n"
-        "| deepseek/deepseek-r1 | 163840 | 0.70 | 2.50 |\n"
-    )
-    assert out == expected
-
-
-def test_cmd_list_no_query_calls_providers(monkeypatch, capsys):
-    """cmd_list with empty query delegates to cmd_providers."""
-    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
-    cli._MARKDOWN = True
-
-    cli.cmd_list("")
-
-    out = capsys.readouterr().out
-    # providers header line must appear; model table must not
-    assert "providers," in out
-    assert "MODEL  (paste after" not in out
-
-
-# ---------------------------------------------------------------------------
-# cmd_providers: markdown output -- exact byte guard
-# ---------------------------------------------------------------------------
-
-
-def test_cmd_providers_md_output_exact(capsys):
-    """cmd_providers in markdown mode emits the correct header, hint, and table."""
-    cli._MARKDOWN = True
-
-    # Two models from same provider; one extra from a second provider.
-    model_extra = Model(
-        id="openai/gpt-4o",
-        name="GPT-4o",
-        context_length=128000,
-        prompt_price=0.0000025,
-        completion_price=0.000010,
-    )
-    models = [_MODEL_A, _MODEL_B, model_extra]
-
-    cli.cmd_providers(models)
-
-    out = capsys.readouterr().out
-    # deepseek has 2 models (listed first by count desc), openai has 1
-    expected = (
-        "\n"
-        "2 providers, 3 models total.\n"
-        "See a company's models:  sb list <PROVIDER>   (e.g. sb list deepseek)\n"
-        "\n"
-        "| PROVIDER | MODELS |\n"
-        "| --- | --- |\n"
-        "| deepseek | 2 |\n"
-        "| openai | 1 |\n"
-    )
-    assert out == expected
-
-
-# ---------------------------------------------------------------------------
 # cmd_use  (Task 5: guarded behavior -- real validate_model, not stubbed)
 # ---------------------------------------------------------------------------
 # Catalog: _MODELS_GUARD contains one >=64K model (deepseek-v4-flash, 1M ctx),
@@ -539,16 +459,16 @@ def test_main_unknown_cmd_exits_1(monkeypatch, capsys):
 
 
 def test_main_md_flag_sets_markdown_and_stripped(monkeypatch):
-    """--md sets _MARKDOWN=True and is not passed down to the subcommand.
+    """--md sets _MARKDOWN=True and is passed as the markdown arg to cmd_list.
 
-    We monkeypatch cmd_list to capture the call; args it receives must not
-    contain '--md'.
+    We monkeypatch cmd_list to capture the call; the query arg must be the
+    empty string (no --md leaked into the query position).
     """
     captured = []
 
-    def fake_cmd_list(query):
-        """Capture the query arg."""
-        captured.append(query)
+    def fake_cmd_list(query, markdown=False):
+        """Capture the query and markdown args."""
+        captured.append((query, markdown))
 
     monkeypatch.setattr(sys, "argv", ["switchboard", "list", "--md"])
     monkeypatch.setattr(cli, "fetch_models", lambda: [])
@@ -557,15 +477,15 @@ def test_main_md_flag_sets_markdown_and_stripped(monkeypatch):
     cli.main()
 
     assert cli._MARKDOWN is True
-    # cmd_list was called with the remaining arg (empty string default)
-    assert captured == [""]
+    # cmd_list was called with query="" and markdown=True
+    assert captured == [("", True)]
 
 
 def test_main_list_dispatches_with_query(monkeypatch):
     """main() with 'list <query>' dispatches to cmd_list with the correct query."""
     captured = []
 
-    def fake_cmd_list(query):
+    def fake_cmd_list(query, markdown=False):
         """Capture the query arg."""
         captured.append(query)
 

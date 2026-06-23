@@ -18,7 +18,8 @@ Reads/writes ~/.claude-code-router/config.json.
 """
 import sys
 
-from .catalog import fetch_models, filter_models, per_million
+from .browse import cmd_list
+from .catalog import fetch_models
 from .ccr_config import (
     read_config,
     write_config,
@@ -45,47 +46,6 @@ def _print_table(columns: list, rows: list) -> None:
         rows: list of cell value tuples (one per column).
     """
     print_table(columns, rows, _MARKDOWN)
-
-
-def cmd_providers(models: list) -> None:
-    """Show the distinct providers (the id prefix before '/') with model counts.
-
-    Args:
-        models: list of Model instances from fetch_models().
-    """
-    counts: dict = {}
-    for m in models:
-        prov = m.id.split("/", 1)[0]
-        counts[prov] = counts.get(prov, 0) + 1
-    rows = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
-    print(f"\n{len(rows)} providers, {len(models)} models total.")
-    print("See a company's models:  sb list <PROVIDER>   (e.g. sb list deepseek)\n")
-    _print_table([("PROVIDER", "left", 28), ("MODELS", "right", 7)], rows)
-
-
-def cmd_list(query: str) -> None:
-    """No query: list providers (companies). With a query: list that provider's models.
-
-    Args:
-        query: Provider or model substring to filter on. Empty string shows providers.
-    """
-    models = fetch_models()
-    if not query:
-        cmd_providers(models)
-        return
-    matches = filter_models(models, query)
-    matches.sort(key=lambda m: per_million(m.prompt_price))
-    print(f"\n{len(matches)} model(s) matching '{query}':")
-    print("Switch in a session:         /model openrouter,<MODEL>")
-    print("Web search (append :online): /model openrouter,<MODEL>:online")
-    print("Set as default (terminal):   sb use <MODEL>\n")
-    rows = [(m.id, m.context_length,
-             f"{per_million(m.prompt_price):.2f}",
-             f"{per_million(m.completion_price):.2f}")
-            for m in matches]
-    cols = [("MODEL  (paste after 'openrouter,')", "left", 44),
-            ("CTX", "right", 9), ("$IN/M", "right", 7), ("$OUT/M", "right", 7)]
-    _print_table(cols, rows)
 
 
 def cmd_use(model_id: str) -> None:
@@ -187,7 +147,7 @@ def main() -> None:
         return
     cmd = args[0]
     if cmd == "list":
-        cmd_list(args[1] if len(args) > 1 else "")
+        cmd_list(args[1] if len(args) > 1 else "", _MARKDOWN)
     elif cmd == "use" and len(args) > 1:
         cmd_use(args[1])
     elif cmd == "current":
