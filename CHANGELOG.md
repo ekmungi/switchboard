@@ -37,6 +37,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Architecture notes
 
-- No file exceeds 200 lines.
+- Every source module in `src/switchboard/` is under the 200-line limit (largest: `health.py` at 197).
 - All data transforms are non-mutating (frozen dataclasses / new dicts).
 - The `--md` flag is the only path that emits markdown; all other output is plain text for terminal readability.
