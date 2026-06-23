@@ -110,12 +110,12 @@ def cmd_current() -> None:
     except Exception:
         catalog = []
 
-    if not catalog:
-        print("(catalog unavailable -- offline checks skipped)")
-
     print()
     for line in status_lines(cfg, catalog, ccr_running()):
         print(line)
+
+    if not catalog:
+        print("(catalog unavailable -- offline checks skipped)")
 
 
 def cmd_doctor() -> None:

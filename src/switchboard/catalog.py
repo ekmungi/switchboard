@@ -76,7 +76,7 @@ def parse_models(payload: dict) -> list[Model]:
         pricing: dict = entry.get("pricing") or {}
         models.append(
             Model(
-                id=entry_id,  # type: ignore[arg-type]  # narrowed to non-empty str above
+                id=str(entry_id),
                 name=entry.get("name", ""),
                 context_length=entry.get("context_length", 0),
                 prompt_price=_safe_price(pricing.get("prompt")),

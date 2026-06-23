@@ -2,7 +2,6 @@
 #
 # TDD: these tests were written before guard.py existed and drove the implementation.
 
-import pytest
 from switchboard.catalog import Model
 from switchboard.guard import validate_model, MIN_CONTEXT
 

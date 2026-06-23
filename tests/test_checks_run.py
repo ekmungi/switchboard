@@ -1,20 +1,16 @@
-# tests/test_checks.py - TDD tests for switchboard.checks (pure doctor logic, no I/O).
+# test_checks_run.py - Tests for run_checks scenarios (all pass, individual failures, order).
 #
-# Tests written BEFORE implementation (RED phase).  All external I/O is
-# passed in as plain values -- no live network, no filesystem, no CCR process.
+# Pure logic tests -- all I/O is passed in as plain values.
 # ---------------------------------------------------------------------------
 
-import pytest
 from switchboard.catalog import Model
-from switchboard.checks import Check, run_checks, format_checks
+from switchboard.checks import Check, run_checks
 from switchboard.ccr_config import ROLES
-from switchboard.guard import MIN_CONTEXT
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
 # ---------------------------------------------------------------------------
 
-# A healthy large-context model (>= 64K, not Anthropic/Haiku).
 _MODEL_LARGE = Model(
     id="deepseek/deepseek-v4-flash",
     name="DeepSeek V4 Flash",
@@ -23,7 +19,6 @@ _MODEL_LARGE = Model(
     completion_price=0.0000003,
 )
 
-# A model whose context is below MIN_CONTEXT (32 K).
 _MODEL_SMALL = Model(
     id="x/small-model",
     name="Small",
@@ -32,7 +27,6 @@ _MODEL_SMALL = Model(
     completion_price=0.0000002,
 )
 
-# A known-good router: all five roles point to the large model, no :online.
 _ROUTER_ALL_GOOD = {
     "default": "openrouter,deepseek/deepseek-v4-flash",
     "background": "openrouter,deepseek/deepseek-v4-flash",
@@ -41,62 +35,8 @@ _ROUTER_ALL_GOOD = {
     "webSearch": "openrouter,deepseek/deepseek-v4-flash",
 }
 
-# A good config: APIKEY blank, no :online websearch.
 _CFG_GOOD = {"APIKEY": "", "Router": _ROUTER_ALL_GOOD}
-
-# A non-empty catalog containing only the large model.
 _CATALOG_GOOD = [_MODEL_LARGE]
-
-
-# ---------------------------------------------------------------------------
-# Check dataclass
-# ---------------------------------------------------------------------------
-
-
-def test_check_is_frozen():
-    """Check is a frozen dataclass -- attempts to set attributes raise FrozenInstanceError."""
-    c = Check(name="foo", ok=True, detail="bar")
-    with pytest.raises(Exception):  # FrozenInstanceError or AttributeError
-        c.ok = False  # type: ignore[misc]
-
-
-def test_check_fields():
-    """Check stores name, ok, and detail correctly."""
-    c = Check(name="CCR running", ok=False, detail="not reachable")
-    assert c.name == "CCR running"
-    assert c.ok is False
-    assert c.detail == "not reachable"
-
-
-# ---------------------------------------------------------------------------
-# format_checks
-# ---------------------------------------------------------------------------
-
-
-def test_format_checks_pass_line():
-    """format_checks emits [PASS] lines for ok=True checks."""
-    checks = [Check(name="CCR running", ok=True, detail="reachable")]
-    lines = format_checks(checks)
-    assert lines == ["[PASS] CCR running: reachable"]
-
-
-def test_format_checks_fail_line():
-    """format_checks emits [FAIL] lines for ok=False checks."""
-    checks = [Check(name="CCR running", ok=False, detail="not reachable")]
-    lines = format_checks(checks)
-    assert lines == ["[FAIL] CCR running: not reachable"]
-
-
-def test_format_checks_multiple():
-    """format_checks returns one line per check, in order."""
-    checks = [
-        Check(name="a", ok=True, detail="good"),
-        Check(name="b", ok=False, detail="bad"),
-    ]
-    lines = format_checks(checks)
-    assert len(lines) == 2
-    assert lines[0].startswith("[PASS]")
-    assert lines[1].startswith("[FAIL]")
 
 
 # ---------------------------------------------------------------------------
@@ -163,7 +103,7 @@ def test_run_checks_web_search_on_detail():
     cfg = {"APIKEY": "", "Router": router}
     checks = run_checks(cfg, _CATALOG_GOOD, ccr_up=True)
     ws = next(c for c in checks if c.name == "web search")
-    assert ws.ok is True  # still informational
+    assert ws.ok is True
     assert ws.detail == "on"
 
 
@@ -239,6 +179,5 @@ def test_run_checks_order():
     assert names[0] == "CCR running"
     assert names[1] == "OpenRouter catalog"
     assert names[2] == "APIKEY blank"
-    # roles follow next (5 of them)
     assert all(names[3 + i].startswith("role ") for i in range(len(ROLES)))
     assert names[-1] == "web search"

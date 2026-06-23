@@ -1,25 +1,17 @@
-# tests/test_catalog.py - tests for the switchboard.catalog module.
+# test_catalog_parse.py - Tests for Model dataclass, parse_models, and _safe_price.
 #
-# TDD: tests are written before the implementation. Run uv run pytest to verify.
-# Network calls are patched out via unittest.mock -- no live HTTP in any test.
+# Network calls are NOT made in this file. Fixtures are loaded from disk.
+# ---------------------------------------------------------------------------
 
 import json
 import pathlib
-from unittest.mock import MagicMock, patch
 
 import pytest
 
 from switchboard.catalog import (
     Model,
-    fetch_models,
-    filter_models,
     parse_models,
-    per_million,
 )
-
-# ---------------------------------------------------------------------------
-# Fixture helpers
-# ---------------------------------------------------------------------------
 
 FIXTURES_DIR = pathlib.Path(__file__).parent / "fixtures"
 
@@ -95,7 +87,6 @@ def test_parse_models_maps_completion_price(sample_models: list[Model]) -> None:
 
 def test_parse_models_missing_pricing_defaults_to_zero(sample_models: list[Model]) -> None:
     """Model with no 'pricing' key gets prompt_price=0 and completion_price=0."""
-    # meta-llama/llama-3-8b-instruct has no pricing field in the fixture
     by_id = {m.id: m for m in sample_models}
     m = by_id["meta-llama/llama-3-8b-instruct"]
     assert m.prompt_price == 0.0
@@ -152,83 +143,7 @@ def test_model_is_frozen(sample_models: list[Model]) -> None:
 
 
 # ---------------------------------------------------------------------------
-# filter_models
-# ---------------------------------------------------------------------------
-
-
-def test_filter_models_empty_query_returns_all(sample_models: list[Model]) -> None:
-    """An empty query string returns all models unchanged."""
-    result = filter_models(sample_models, "")
-    assert len(result) == len(sample_models)
-
-
-def test_filter_models_matches_by_id(sample_models: list[Model]) -> None:
-    """filter_models matches models whose id contains the query."""
-    result = filter_models(sample_models, "deepseek")
-    ids = [m.id for m in result]
-    assert "deepseek/deepseek-v4-flash" in ids
-    assert "deepseek/deepseek-chat" in ids
-    assert "openai/gpt-4o" not in ids
-
-
-def test_filter_models_matches_by_name(sample_models: list[Model]) -> None:
-    """filter_models matches models whose name contains the query."""
-    result = filter_models(sample_models, "GPT")
-    assert len(result) == 1
-    assert result[0].id == "openai/gpt-4o"
-
-
-def test_filter_models_case_insensitive(sample_models: list[Model]) -> None:
-    """filter_models match is case-insensitive."""
-    upper = filter_models(sample_models, "DEEPSEEK")
-    lower = filter_models(sample_models, "deepseek")
-    assert [m.id for m in upper] == [m.id for m in lower]
-
-
-def test_filter_models_no_match_returns_empty(sample_models: list[Model]) -> None:
-    """filter_models returns an empty list when no model matches."""
-    result = filter_models(sample_models, "zzznonexistent")
-    assert result == []
-
-
-# ---------------------------------------------------------------------------
-# per_million
-# ---------------------------------------------------------------------------
-
-
-def test_per_million_converts_string_price() -> None:
-    """per_million converts a per-token price string to per-million float."""
-    assert per_million("0.000001") == pytest.approx(1.0)
-
-
-def test_per_million_converts_float_price() -> None:
-    """per_million converts a per-token price float to per-million float."""
-    assert per_million(0.0000025) == pytest.approx(2.5)
-
-
-def test_per_million_handles_none() -> None:
-    """per_million returns 0.0 when price is None."""
-    assert per_million(None) == 0.0
-
-
-def test_per_million_handles_empty_string() -> None:
-    """per_million returns 0.0 when price is an empty string."""
-    assert per_million("") == 0.0
-
-
-def test_per_million_handles_non_numeric_string() -> None:
-    """per_million returns 0.0 for non-numeric string input."""
-    assert per_million("free") == 0.0
-
-
-def test_per_million_zero_price() -> None:
-    """per_million returns 0.0 for a zero price."""
-    assert per_million("0") == 0.0
-    assert per_million(0.0) == 0.0
-
-
-# ---------------------------------------------------------------------------
-# parse_models: defensive id handling (fix #1)
+# parse_models: defensive id handling
 # ---------------------------------------------------------------------------
 
 
@@ -240,9 +155,9 @@ def test_parse_models_skips_entry_with_missing_id() -> None:
     """
     payload = {
         "data": [
-            {"name": "No ID model", "context_length": 100},  # missing "id"
-            {"id": "", "name": "Empty ID model"},            # empty string id
-            {"id": None, "name": "None ID model"},           # None id
+            {"name": "No ID model", "context_length": 100},
+            {"id": "", "name": "Empty ID model"},
+            {"id": None, "name": "None ID model"},
             {"id": "valid/model", "name": "Valid", "context_length": 512},
         ]
     }
@@ -252,31 +167,14 @@ def test_parse_models_skips_entry_with_missing_id() -> None:
     assert result[0].context_length == 512
 
 
-# ---------------------------------------------------------------------------
-# fetch_models: patched HTTP (fix #2 -- no live network)
-# ---------------------------------------------------------------------------
+def test_parse_models_int_id_coerced_to_str() -> None:
+    """An integer 'id' value is coerced to str (no type error, no skip).
 
-
-def test_fetch_models_returns_parsed_models_from_fixture() -> None:
-    """fetch_models returns a list[Model] matching parse_models on the fixture.
-
-    urllib.request.urlopen is patched so no live HTTP request is made. The mock
-    context-manager's .read() returns the raw bytes of models_sample.json.
-    Asserts that the deepseek-v4-flash entry is present with the expected values.
+    The guard ``if not entry_id`` passes for a non-zero int; str(entry_id)
+    must produce a valid string id rather than raising TypeError.
     """
-    fixture_bytes: bytes = (FIXTURES_DIR / "models_sample.json").read_bytes()
-    expected: list[Model] = parse_models(json.loads(fixture_bytes.decode("utf-8")))
-
-    mock_response = MagicMock()
-    mock_response.__enter__ = MagicMock(return_value=mock_response)
-    mock_response.__exit__ = MagicMock(return_value=False)
-    mock_response.read.return_value = fixture_bytes
-
-    with patch("urllib.request.urlopen", return_value=mock_response):
-        result = fetch_models()
-
-    assert result == expected
-    by_id = {m.id: m for m in result}
-    flash = by_id["deepseek/deepseek-v4-flash"]
-    assert flash.context_length == 1048576
-    assert flash.prompt_price == pytest.approx(9e-8)
+    payload = {"data": [{"id": 42, "name": "Int ID model", "context_length": 65536}]}
+    result = parse_models(payload)
+    assert len(result) == 1
+    assert result[0].id == "42"
+    assert isinstance(result[0].id, str)
