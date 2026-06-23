@@ -42,6 +42,7 @@ def _safe_price(value: object) -> float:
         The price as a float, or 0.0 on any conversion failure.
     """
     try:
+        # `or 0` collapses None / "" / other falsy values to 0 before float()
         return float(value or 0)
     except (TypeError, ValueError):
         return 0.0
@@ -66,10 +67,16 @@ def parse_models(payload: dict) -> list[Model]:
 
     models: list[Model] = []
     for entry in entries:
+        # Skip any entry that is missing an "id" or has a None/empty id value;
+        # a Model with no id would be unusable and likely signals a malformed
+        # API response -- skip rather than raising KeyError or emitting bad data.
+        entry_id: object = entry.get("id")
+        if not entry_id:
+            continue
         pricing: dict = entry.get("pricing") or {}
         models.append(
             Model(
-                id=entry["id"],
+                id=entry_id,  # type: ignore[arg-type]  # narrowed to non-empty str above
                 name=entry.get("name", ""),
                 context_length=entry.get("context_length", 0),
                 prompt_price=_safe_price(pricing.get("prompt")),

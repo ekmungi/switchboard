@@ -1,15 +1,17 @@
 # tests/test_catalog.py - tests for the switchboard.catalog module.
 #
 # TDD: tests are written before the implementation. Run uv run pytest to verify.
-# Network calls are NOT made -- fetch_models is not tested here.
+# Network calls are patched out via unittest.mock -- no live HTTP in any test.
 
 import json
 import pathlib
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from switchboard.catalog import (
     Model,
+    fetch_models,
     filter_models,
     parse_models,
     per_million,
@@ -223,3 +225,58 @@ def test_per_million_zero_price() -> None:
     """per_million returns 0.0 for a zero price."""
     assert per_million("0") == 0.0
     assert per_million(0.0) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# parse_models: defensive id handling (fix #1)
+# ---------------------------------------------------------------------------
+
+
+def test_parse_models_skips_entry_with_missing_id() -> None:
+    """Entries with no 'id' key are silently skipped; valid entries are returned.
+
+    Verifies that a malformed API response does not raise KeyError and does not
+    stop processing of the remaining valid entries.
+    """
+    payload = {
+        "data": [
+            {"name": "No ID model", "context_length": 100},  # missing "id"
+            {"id": "", "name": "Empty ID model"},            # empty string id
+            {"id": None, "name": "None ID model"},           # None id
+            {"id": "valid/model", "name": "Valid", "context_length": 512},
+        ]
+    }
+    result = parse_models(payload)
+    assert len(result) == 1
+    assert result[0].id == "valid/model"
+    assert result[0].context_length == 512
+
+
+# ---------------------------------------------------------------------------
+# fetch_models: patched HTTP (fix #2 -- no live network)
+# ---------------------------------------------------------------------------
+
+
+def test_fetch_models_returns_parsed_models_from_fixture() -> None:
+    """fetch_models returns a list[Model] matching parse_models on the fixture.
+
+    urllib.request.urlopen is patched so no live HTTP request is made. The mock
+    context-manager's .read() returns the raw bytes of models_sample.json.
+    Asserts that the deepseek-v4-flash entry is present with the expected values.
+    """
+    fixture_bytes: bytes = (FIXTURES_DIR / "models_sample.json").read_bytes()
+    expected: list[Model] = parse_models(json.loads(fixture_bytes.decode("utf-8")))
+
+    mock_response = MagicMock()
+    mock_response.__enter__ = MagicMock(return_value=mock_response)
+    mock_response.__exit__ = MagicMock(return_value=False)
+    mock_response.read.return_value = fixture_bytes
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        result = fetch_models()
+
+    assert result == expected
+    by_id = {m.id: m for m in result}
+    flash = by_id["deepseek/deepseek-v4-flash"]
+    assert flash.context_length == 1048576
+    assert flash.prompt_price == pytest.approx(9e-8)
