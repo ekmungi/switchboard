@@ -27,7 +27,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `sb websearch on|off` subcommand: toggles `:online` suffix on the webSearch CCR role and restarts CCR.
 - Enhanced `sb current`: full routing table plus effective model, CCR-running state, APIKEY-blank state, web-search state, and WARNINGS.
 - `/switchboard` slash command at `~/.claude/commands/switchboard.md`: runs any control-panel subcommand from inside a Claude Code session.
-- 156 pytest tests covering all modules.
+- 157 pytest tests covering all modules.
+
+#### Packaging / distribution
+
+- Claude Code **plugin** layout so the repo installs via `/plugin marketplace add ekmungi/switchboard` + `/plugin install switchboard@switchboard`: `.claude-plugin/plugin.json`, `.claude-plugin/marketplace.json`, and `commands/{catalog,switchboard}.md` that resolve their own path via `${CLAUDE_PLUGIN_ROOT}` (no hardcoded paths).
+- `SessionStart` hook (`hooks/ccr_precheck.sh`) that self-gates on `ANTHROPIC_BASE_URL`: it runs a `doctor` pre-flight **only when the session is routed through CCR** (loopback proxy) and surfaces only failing checks; it is silent in a normal Anthropic session and in a healthy CCR session.
+- `install.ps1` / `install.sh` bootstrap scripts: prerequisite checks, `uv sync`, idempotent CCR-config scaffold (placeholder key, blank APIKEY, webSearch without `:online` — never overwrites an existing config or writes a secret), and an `sb` shell function.
+- `INSTALL.md` walkthrough.
 
 #### Changed
 

@@ -1,0 +1,11 @@
+{
+  "name": "switchboard",
+  "owner": { "name": "ekmungi" },
+  "plugins": [
+    {
+      "name": "switchboard",
+      "source": "./",
+      "description": "Control panel for driving Claude Code via OpenRouter/CCR (guarded use, current, doctor, websearch, catalog)."
+    }
+  ]
+}

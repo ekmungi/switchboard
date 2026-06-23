@@ -10,6 +10,40 @@ switch between Anthropic and OpenRouter models (ideally mid-session).
    subagents still work under a non-Claude model (the compatibility matrix).
 3. Build an ergonomic model switch (in-session and / or per-session profiles).
 
+## Install on a new machine
+
+Switchboard has two install surfaces — Claude Code **slash commands** and the terminal **`sb`** command — both sitting on prerequisites you provide once per machine.
+
+**Prerequisites (not shipped — switchboard only *drives* the engine, it isn't the engine):**
+- **Python 3.12+** (the CLI and slash commands run on it).
+- **claude-code-router** (the routing engine): `npm install -g @musistudio/claude-code-router`.
+- An **OpenRouter API key** placed in `~/.claude-code-router/config.json` (kept out of git; the installer scaffolds that file with a placeholder for you to fill).
+- Optional: **uv** (for pretty terminal tables via `rich`; the tool still works on plain Python).
+
+### A. As a Claude Code plugin (the slash commands, fully portable)
+
+From inside a Claude Code session:
+```
+/plugin marketplace add ekmungi/switchboard
+/plugin install switchboard@switchboard
+```
+This installs `/catalog` and `/switchboard` on any machine. The plugin bundles the Python and resolves its own location via `${CLAUDE_PLUGIN_ROOT}` (no hardcoded paths). Its `SessionStart` hook runs a health pre-flight **only when the session is routed through CCR** (detected via `ANTHROPIC_BASE_URL` pointing at the local loopback proxy) and stays silent in a normal Anthropic session. A private repo installs through your existing `gh`/git auth.
+
+> Already have user-level `~/.claude/commands/catalog.md` / `switchboard.md`? Remove them after installing the plugin so the commands don't appear twice.
+
+### B. The terminal `sb` command (bootstrap script)
+
+```
+# Windows (PowerShell)
+git clone https://github.com/ekmungi/switchboard; cd switchboard; .\install.ps1
+
+# macOS / Linux
+git clone https://github.com/ekmungi/switchboard && cd switchboard && ./install.sh
+```
+The installer checks prerequisites, runs `uv sync`, scaffolds the CCR config (key placeholder only — it never writes or overwrites a secret), and adds an `sb` function to your shell profile. It is **safe to re-run** (idempotent). Then paste your OpenRouter key into `~/.claude-code-router/config.json` and run `sb doctor`.
+
+Full walkthrough, the CCR-only hook explained, and troubleshooting: see [INSTALL.md](INSTALL.md).
+
 ## Commands (control panel)
 
 All commands run via the `sb` alias (or `uv run python switchboard.py`).
