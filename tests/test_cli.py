@@ -208,11 +208,17 @@ def test_cmd_use_too_small_model_exits_1(monkeypatch, capsys):
     """cmd_use with a model whose context < 64K prints the guard reason, exits 1.
 
     The real validate_model runs and catches the too-small context failure.
-    No config writes or CCR restarts happen.
+    set_all_roles, ensure_apikey_blank, write_config, restart_ccr must NOT be called.
     """
     monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_GUARD))
+    set_all_roles_calls: list = []
+    ensure_calls: list = []
     write_called: list = []
     restart_called: list = []
+    monkeypatch.setattr(cli, "set_all_roles",
+                        lambda cfg, mid, online=False: set_all_roles_calls.append((cfg, mid, online)) or cfg)
+    monkeypatch.setattr(cli, "ensure_apikey_blank",
+                        lambda cfg: ensure_calls.append(cfg) or cfg)
     monkeypatch.setattr(cli, "write_config", lambda cfg: write_called.append(cfg))
     monkeypatch.setattr(cli, "restart_ccr", lambda: restart_called.append(True))
 
@@ -221,9 +227,11 @@ def test_cmd_use_too_small_model_exits_1(monkeypatch, capsys):
 
     assert exc_info.value.code == 1
     out = capsys.readouterr().out
-    # Guard reason must mention the context size
-    assert "32,768" in out or "32768" in out
+    # Guard reason must mention the context size using thousands-separator format
+    assert "32,768" in out
     assert "minimum" in out
+    assert set_all_roles_calls == []
+    assert ensure_calls == []
     assert write_called == []
     assert restart_called == []
 
