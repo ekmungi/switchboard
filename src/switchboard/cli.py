@@ -31,10 +31,12 @@ from .ccr_config import (
     set_all_roles,
     ensure_apikey_blank,
     restart_ccr,
+    ccr_running,
     CONFIG_PATH,
     ROLES,
 )
 from .guard import validate_model
+from .health import effective_model, apikey_blank, websearch_online, role_warnings
 
 _MARKDOWN: bool = False  # set by --md: emit markdown tables (used by the /catalog slash command)
 
@@ -147,19 +149,47 @@ def cmd_use(model_id: str) -> None:
 
 
 def cmd_current() -> None:
-    """Show the active CCR routing roles from the config file.
+    """Show the active CCR routing roles plus a health summary.
 
-    Reads CONFIG_PATH and prints each role's model assignment. Warns if no
-    Router section is found. ROLES (5 entries including webSearch) are iterated
-    exactly once -- no duplication.
+    Reads CONFIG_PATH, prints the routing table, then shows effective model,
+    CCR running status, APIKEY blank status, and web-search status.  Appends
+    a WARNINGS block when any health issues are detected.  Never crashes on a
+    catalog fetch failure (offline mode: catalog checks are skipped).
     """
-    router = read_config().get("Router", {})
+    cfg = read_config()
+    router = cfg.get("Router", {})
     if not router:
         print("No Router config found at", CONFIG_PATH)
         return
+
+    # Routing table (preserved exactly)
     rows = [(role, router[role]) for role in ROLES if role in router]
     print("\nCurrent CCR routing:\n")
     _print_table([("ROLE", "left", 14), ("MODEL", "left", 44)], rows)
+
+    # Fetch catalog defensively so `current` never crashes offline.
+    try:
+        catalog = fetch_models()
+    except Exception:
+        catalog = []
+
+    # Status block
+    em = effective_model(cfg)
+    print()
+    print(f"Effective model : {em if em is not None else '(roles disagree)'}")
+    print(f"CCR running     : {'yes' if ccr_running() else 'no'}")
+    print(f"APIKEY blank    : {'yes' if apikey_blank(cfg) else 'NO'}")
+    print(f"Web search      : {'on' if websearch_online(cfg) else 'off'}")
+    if not catalog:
+        print("(catalog unavailable -- offline checks skipped)")
+
+    # Warnings block
+    warnings = role_warnings(cfg, catalog)
+    if warnings:
+        print()
+        print("WARNINGS:")
+        for w in warnings:
+            print(f"  {w}")
 
 
 def main() -> None:

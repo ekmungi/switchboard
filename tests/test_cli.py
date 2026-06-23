@@ -308,27 +308,34 @@ def test_cmd_use_valid_model_uses_online_false(monkeypatch, capsys):
 # cmd_current
 # ---------------------------------------------------------------------------
 
+# Shared router used for cmd_current tests.
+_ROUTER_CURRENT = {
+    "default": "openrouter,deepseek/deepseek-chat",
+    "background": "openrouter,deepseek/deepseek-chat",
+    "think": "openrouter,deepseek/deepseek-chat",
+    "longContext": "openrouter,deepseek/deepseek-chat",
+    "webSearch": "openrouter,deepseek/deepseek-chat:online",
+    "longContextThreshold": 200000,  # should NOT appear as a row
+}
+_CFG_CURRENT = {"APIKEY": "", "Router": _ROUTER_CURRENT}
+
 
 def test_cmd_current_shows_all_five_roles_once(monkeypatch, capsys):
-    """cmd_current shows exactly the five ROLES, each exactly once.
+    """cmd_current shows exactly the five ROLES each exactly once in the table.
 
-    webSearch must NOT appear twice (regression guard for ROLES + ['webSearch'] bug).
+    webSearch must NOT appear twice (regression guard).  The status block adds
+    extra lines but each role name must still appear exactly once overall.
     """
-    router = {
-        "default": "openrouter,deepseek/deepseek-chat",
-        "background": "openrouter,deepseek/deepseek-chat",
-        "think": "openrouter,deepseek/deepseek-chat",
-        "longContext": "openrouter,deepseek/deepseek-chat",
-        "webSearch": "openrouter,deepseek/deepseek-chat:online",
-        "longContextThreshold": 200000,  # should NOT appear as a row
-    }
-    monkeypatch.setattr(cli, "read_config", lambda: {"Router": router})
+    monkeypatch.setattr(cli, "read_config", lambda: _CFG_CURRENT)
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
+    monkeypatch.setattr(cli, "ccr_running", lambda: False)
     cli._MARKDOWN = True
 
     cli.cmd_current()
 
     out = capsys.readouterr().out
-    # Exactly one occurrence of each role
+    # Each role appears exactly once (in the table rows; the status block does
+    # not repeat role names).
     for role in ["default", "background", "think", "longContext", "webSearch"]:
         assert out.count(role) == 1, f"role '{role}' appeared != 1 time"
     # Non-role key must not appear as a row
@@ -343,6 +350,75 @@ def test_cmd_current_no_router_prints_warning(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "No Router config found at" in out
+
+
+def test_cmd_current_good_config_shows_effective_model_and_no_warnings(monkeypatch, capsys):
+    """cmd_current with all roles on a >=64K catalog model shows effective model.
+
+    For a perfectly healthy config the WARNINGS block must NOT appear.
+    """
+    # All five roles on deepseek-chat (131K context, in catalog), APIKEY blank.
+    router_all_chat = {
+        "default": "openrouter,deepseek/deepseek-chat",
+        "background": "openrouter,deepseek/deepseek-chat",
+        "think": "openrouter,deepseek/deepseek-chat",
+        "longContext": "openrouter,deepseek/deepseek-chat",
+        "webSearch": "openrouter,deepseek/deepseek-chat",
+    }
+    cfg = {"APIKEY": "", "Router": router_all_chat}
+
+    monkeypatch.setattr(cli, "read_config", lambda: cfg)
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_TWO))
+    monkeypatch.setattr(cli, "ccr_running", lambda: True)
+
+    cli.cmd_current()
+
+    out = capsys.readouterr().out
+    assert "deepseek/deepseek-chat" in out
+    assert "Effective model" in out
+    assert "WARNINGS:" not in out
+
+
+def test_cmd_current_broken_config_shows_warnings(monkeypatch, capsys):
+    """cmd_current with a small-context role and non-blank APIKEY shows WARNINGS block."""
+    # background role on a too-small model (32K), APIKEY non-blank.
+    router_broken = {
+        "default": "openrouter,deepseek/deepseek-chat",
+        "background": "openrouter,x/small",
+        "think": "openrouter,deepseek/deepseek-chat",
+        "longContext": "openrouter,deepseek/deepseek-chat",
+        "webSearch": "openrouter,deepseek/deepseek-chat",
+    }
+    cfg = {"APIKEY": "sk-leaked", "Router": router_broken}
+
+    monkeypatch.setattr(cli, "read_config", lambda: cfg)
+    monkeypatch.setattr(cli, "fetch_models", lambda: list(_MODELS_GUARD))
+    monkeypatch.setattr(cli, "ccr_running", lambda: False)
+
+    cli.cmd_current()
+
+    out = capsys.readouterr().out
+    assert "WARNINGS:" in out
+    # background context warning
+    assert "background" in out
+    # APIKEY warning
+    assert "APIKEY" in out
+
+
+def test_cmd_current_catalog_fetch_error_does_not_crash(monkeypatch, capsys):
+    """cmd_current degrades gracefully when fetch_models raises an exception."""
+    def _boom():
+        raise RuntimeError("network error")
+
+    monkeypatch.setattr(cli, "read_config", lambda: _CFG_CURRENT)
+    monkeypatch.setattr(cli, "fetch_models", _boom)
+    monkeypatch.setattr(cli, "ccr_running", lambda: False)
+
+    cli.cmd_current()  # must NOT raise
+
+    out = capsys.readouterr().out
+    assert "Current CCR routing" in out
+    assert "offline" in out.lower() or "unavailable" in out.lower()
 
 
 # ---------------------------------------------------------------------------
