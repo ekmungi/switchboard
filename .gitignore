@@ -1,0 +1,27 @@
+# Secrets — never commit (API keys, tokens, OpenRouter key)
+.env
+.env.*
+*.key
+*token*
+*secret*
+
+# Local-only plan / scratch files (kept out of git per user policy)
+PLAN.md
+*.local.md
+*.local.json
+
+# Node (claude-code-router is Node-based)
+node_modules/
+
+# Python (uv, if adopted)
+.venv/
+__pycache__/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+
+# Session scratch (remember plugin buffers/logs + SDD progress ledger) — local only
+.remember/
+.superpowers/
