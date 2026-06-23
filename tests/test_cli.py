@@ -399,8 +399,11 @@ def test_cmd_current_broken_config_shows_warnings(monkeypatch, capsys):
 
     out = capsys.readouterr().out
     assert "WARNINGS:" in out
-    # background context warning
-    assert "background" in out
+    # background must appear at least twice: once in the routing table row and once
+    # in the WARNINGS block (proving the warning specifically references that role).
+    assert out.count("background") >= 2, (
+        f"Expected 'background' >= 2 times (table + warning), got {out.count('background')}"
+    )
     # APIKEY warning
     assert "APIKEY" in out
 

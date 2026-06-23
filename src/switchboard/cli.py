@@ -4,6 +4,7 @@
 # pure-function modules and adds no additional runtime dependencies beyond stdlib.
 # The /catalog slash command runs `python switchboard.py list <query> --md`; that
 # path must work with bare Python (no venv), so the rich import is optional.
+# Table rendering is delegated to render.py; status logic to health.py.
 """switchboard.py - browse OpenRouter models and point claude-code-router at one.
 
 Usage:
@@ -15,14 +16,6 @@ Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 Reads/writes ~/.claude-code-router/config.json.
 """
 import sys
-
-# rich gives colored tables; fall back to plain text if it is not installed.
-try:
-    from rich.console import Console
-    from rich.table import Table
-    _CONSOLE = Console()
-except ImportError:
-    _CONSOLE = None
 
 from .catalog import fetch_models, filter_models, per_million
 from .ccr_config import (
@@ -36,38 +29,20 @@ from .ccr_config import (
     ROLES,
 )
 from .guard import validate_model
-from .health import effective_model, apikey_blank, websearch_online, role_warnings
+from .health import status_lines
+from .render import print_table
 
 _MARKDOWN: bool = False  # set by --md: emit markdown tables (used by the /catalog slash command)
 
 
 def _print_table(columns: list, rows: list) -> None:
-    """Render a table: markdown if --md, else rich if available, else plain text.
+    """Render via the shared table renderer using the current --md flag.
 
     Args:
         columns: list of (header, justify, width) tuples.
         rows: list of cell value tuples (one per column).
     """
-    if _MARKDOWN:
-        print("| " + " | ".join(h for h, _, _ in columns) + " |")
-        print("| " + " | ".join("---" for _ in columns) + " |")
-        for row in rows:
-            print("| " + " | ".join(str(c) for c in row) + " |")
-        return
-    if _CONSOLE is not None:
-        table = Table(box=None, pad_edge=False)
-        for header, justify, _ in columns:
-            table.add_column(header, justify=justify, no_wrap=True)
-        for row in rows:
-            table.add_row(*[str(c) for c in row])
-        _CONSOLE.print(table)
-        return
-    line = "  ".join(f"{h:<{w}}" if j == "left" else f"{h:>{w}}" for h, j, w in columns)
-    print(line)
-    print("-" * len(line))
-    for row in rows:
-        print("  ".join(f"{str(c):<{w}}" if j == "left" else f"{str(c):>{w}}"
-                        for c, (_, j, w) in zip(row, columns)))
+    print_table(columns, rows, _MARKDOWN)
 
 
 def cmd_providers(models: list) -> None:
@@ -151,10 +126,10 @@ def cmd_use(model_id: str) -> None:
 def cmd_current() -> None:
     """Show the active CCR routing roles plus a health summary.
 
-    Reads CONFIG_PATH, prints the routing table, then shows effective model,
-    CCR running status, APIKEY blank status, and web-search status.  Appends
-    a WARNINGS block when any health issues are detected.  Never crashes on a
-    catalog fetch failure (offline mode: catalog checks are skipped).
+    Reads CONFIG_PATH, prints the routing table, then delegates the status
+    block (effective model, CCR running, APIKEY, web-search, WARNINGS) to
+    health.status_lines.  Never crashes on a catalog fetch failure (offline
+    mode: catalog checks are skipped).
     """
     cfg = read_config()
     router = cfg.get("Router", {})
@@ -173,23 +148,13 @@ def cmd_current() -> None:
     except Exception:
         catalog = []
 
-    # Status block
-    em = effective_model(cfg)
-    print()
-    print(f"Effective model : {em if em is not None else '(roles disagree)'}")
-    print(f"CCR running     : {'yes' if ccr_running() else 'no'}")
-    print(f"APIKEY blank    : {'yes' if apikey_blank(cfg) else 'NO'}")
-    print(f"Web search      : {'on' if websearch_online(cfg) else 'off'}")
     if not catalog:
         print("(catalog unavailable -- offline checks skipped)")
 
-    # Warnings block
-    warnings = role_warnings(cfg, catalog)
-    if warnings:
-        print()
-        print("WARNINGS:")
-        for w in warnings:
-            print(f"  {w}")
+    # Status block (blank line separator matches previous output)
+    print()
+    for line in status_lines(cfg, catalog, ccr_running()):
+        print(line)
 
 
 def main() -> None:

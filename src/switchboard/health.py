@@ -8,6 +8,14 @@ from .catalog import Model
 from .ccr_config import ROLES
 from .guard import MIN_CONTEXT
 
+__all__ = [
+    "effective_model",
+    "apikey_blank",
+    "websearch_online",
+    "role_warnings",
+    "status_lines",
+]
+
 
 def _role_model(role_value: str) -> str:
     """Return the bare OpenRouter model id from a CCR role value.
@@ -117,7 +125,11 @@ def role_warnings(cfg: dict, catalog: list[Model]) -> list[str]:
             continue
         model = _role_model(router[role])
 
-        # Anthropic / Haiku leak check (always, even offline)
+        # Anthropic / Haiku leak check (always, even offline).
+        # The broad "haiku" in model substring match is intentional: any model id
+        # that contains "haiku" (regardless of provider) is treated as a leak risk
+        # because it implies a small/fast Anthropic-class model that bypasses CCR
+        # APIKEY isolation.
         if (
             model.startswith("anthropic/")
             or model.startswith("~anthropic/")
@@ -145,3 +157,37 @@ def role_warnings(cfg: dict, catalog: list[Model]) -> list[str]:
         warnings.append("web search is ON (:online) -- billed by OpenRouter")
 
     return warnings
+
+
+def status_lines(cfg: dict, catalog: list[Model], ccr_up: bool) -> list[str]:
+    """Return the status-block lines for 'sb current', without printing them.
+
+    Produces four mandatory status lines followed by an optional WARNINGS block
+    when role_warnings finds issues.  The caller prints each line.
+
+    Args:
+        cfg:     The full CCR config dict.
+        catalog: Live catalog (empty list when offline -- catalog checks skipped).
+        ccr_up:  True iff the CCR process is currently running.
+
+    Returns:
+        A list of strings ready to be printed one per line.  The leading blank
+        line that separates the routing table from the status block is NOT
+        included here; the caller emits it before iterating.
+    """
+    em = effective_model(cfg)
+    lines: list[str] = [
+        f"Effective model : {em if em is not None else '(roles disagree)'}",
+        f"CCR running     : {'yes' if ccr_up else 'no'}",
+        f"APIKEY blank    : {'yes' if apikey_blank(cfg) else 'NO'}",
+        f"Web search      : {'on' if websearch_online(cfg) else 'off'}",
+    ]
+
+    warnings = role_warnings(cfg, catalog)
+    if warnings:
+        lines.append("")  # blank line before WARNINGS block, matching cmd_current output
+        lines.append("WARNINGS:")
+        for w in warnings:
+            lines.append(f"  {w}")
+
+    return lines

@@ -12,6 +12,7 @@ from switchboard.health import (
     apikey_blank,
     websearch_online,
     role_warnings,
+    status_lines,
 )
 from switchboard.guard import MIN_CONTEXT
 
@@ -287,3 +288,55 @@ def test_role_warnings_multiple_issues_all_reported():
     assert any("APIKEY" in w for w in warnings)
     assert any("web search" in w.lower() for w in warnings)
     assert len(warnings) >= 3
+
+
+def test_role_warnings_tilde_anthropic_prefix_triggers_warning():
+    """role_warnings flags a model whose id starts with '~anthropic/' as a leak risk.
+
+    Exercises the startswith('~anthropic/') branch in the Anthropic/Haiku check.
+    """
+    router = {**_ROUTER_ALL_AGREE, "background": "openrouter,~anthropic/claude-haiku-3"}
+    cfg = {"APIKEY": "", "Router": router}
+    warnings = role_warnings(cfg, _CATALOG_GOOD)
+    assert any("background" in w for w in warnings), (
+        f"Expected warning for background role with ~anthropic/ prefix, got: {warnings}"
+    )
+    assert any("Anthropic/Haiku" in w or "haiku" in w.lower() for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# status_lines
+# ---------------------------------------------------------------------------
+
+
+def test_status_lines_known_good_config():
+    """status_lines returns four status lines and no WARNINGS for a healthy config."""
+    lines = status_lines(_CFG_GOOD, _CATALOG_GOOD, ccr_up=True)
+    assert len(lines) == 4
+    assert lines[0] == "Effective model : deepseek/deepseek-v4-flash"
+    assert lines[1] == "CCR running     : yes"
+    assert lines[2] == "APIKEY blank    : yes"
+    assert lines[3] == "Web search      : off"
+    assert not any("WARNINGS" in ln for ln in lines)
+
+
+def test_status_lines_broken_config_includes_warnings():
+    """status_lines appends WARNINGS: and indented items when issues exist."""
+    router = {
+        **_ROUTER_ALL_AGREE,
+        "background": f"openrouter,{_MODEL_SMALL.id}",
+    }
+    cfg = {"APIKEY": "sk-real", "Router": router}
+    lines = status_lines(cfg, _CATALOG_WITH_SMALL, ccr_up=False)
+
+    # First four lines must still be the status block
+    assert lines[1] == "CCR running     : no"
+    assert lines[2] == "APIKEY blank    : NO"
+
+    # WARNINGS: line must appear after the four status lines
+    assert "WARNINGS:" in lines
+    warnings_idx = lines.index("WARNINGS:")
+    assert warnings_idx >= 4
+
+    # At least one indented warning line must follow it
+    assert any(ln.startswith("  ") for ln in lines[warnings_idx + 1:])
