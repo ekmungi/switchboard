@@ -8,10 +8,11 @@
 """switchboard.py - browse OpenRouter models and point claude-code-router at one.
 
 Usage:
-  switchboard list [query]   # no query: list companies; with query: that company's models
-  switchboard use <model-id> # pin all CCR roles to a model + restart CCR
-  switchboard current        # show the active CCR routing
-  switchboard doctor         # run pass/fail health checks
+  switchboard list [query]      # no query: list companies; with query: that company's models
+  switchboard use <model-id>    # pin all CCR roles to a model + restart CCR
+  switchboard current           # show the active CCR routing
+  switchboard doctor            # run pass/fail health checks
+  switchboard websearch on|off  # toggle webSearch :online suffix and restart CCR
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 Reads/writes ~/.claude-code-router/config.json.
@@ -24,6 +25,7 @@ from .ccr_config import (
     read_config,
     write_config,
     set_all_roles,
+    set_websearch_online,
     ensure_apikey_blank,
     restart_ccr,
     ccr_running,
@@ -131,6 +133,28 @@ def cmd_doctor() -> None:
         sys.exit(1)
 
 
+def cmd_websearch(state: str) -> None:
+    """Toggle web search (:online) on the webSearch role, then restart CCR.
+
+    Reads the current config, applies set_websearch_online (pure, non-mutating),
+    writes the result, prints the new webSearch role value, and restarts CCR.
+    Exits 1 without touching config or CCR when *state* is not 'on' or 'off'.
+
+    Args:
+        state: Must be 'on' (append :online) or 'off' (strip :online).
+
+    Exits with code 1 if state is not 'on' or 'off'.
+    """
+    if state not in ("on", "off"):
+        print("Usage: sb websearch on|off")
+        sys.exit(1)
+    cfg = read_config()
+    cfg = set_websearch_online(cfg, state == "on")
+    write_config(cfg)
+    print(f"webSearch -> {cfg['Router']['webSearch']}")
+    restart_ccr()
+
+
 def main() -> None:
     """Dispatch the chosen subcommand from sys.argv.
 
@@ -154,6 +178,8 @@ def main() -> None:
         cmd_current()
     elif cmd == "doctor":
         cmd_doctor()
+    elif cmd == "websearch" and len(args) > 1:
+        cmd_websearch(args[1])
     else:
         print(__doc__)
         sys.exit(1)
