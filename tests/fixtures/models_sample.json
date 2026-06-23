@@ -1,0 +1,44 @@
+{
+  "data": [
+    {
+      "id": "deepseek/deepseek-v4-flash",
+      "name": "DeepSeek V4 Flash",
+      "context_length": 1048576,
+      "pricing": {
+        "prompt": "0.00000009",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "deepseek/deepseek-chat",
+      "name": "DeepSeek V3",
+      "context_length": 32768,
+      "pricing": {
+        "prompt": "0.0000002",
+        "completion": "0"
+      }
+    },
+    {
+      "id": "openai/gpt-4o",
+      "name": "GPT-4o",
+      "context_length": 128000,
+      "pricing": {
+        "prompt": "0.0000025",
+        "completion": "0.00001"
+      }
+    },
+    {
+      "id": "meta-llama/llama-3-8b-instruct",
+      "name": "Llama 3 8B Instruct",
+      "context_length": 8192
+    },
+    {
+      "id": "some/free-model",
+      "name": "Free Model",
+      "pricing": {
+        "prompt": "0",
+        "completion": "0"
+      }
+    }
+  ]
+}
