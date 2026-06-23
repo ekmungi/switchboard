@@ -7,6 +7,7 @@
 import json
 import os
 import socket
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -292,13 +293,25 @@ class TestWriteConfig:
 class TestCcrRunning:
     """Tests for ccr_running()."""
 
-    def test_returns_true_when_connection_succeeds(self, monkeypatch):
-        """Returns True when create_connection does not raise."""
-        monkeypatch.setattr(socket, "create_connection", lambda addr, timeout: None)
+    def test_returns_true_when_connection_succeeds(self, tmp_path, monkeypatch):
+        """Returns True when create_connection does not raise.
+
+        Uses a MagicMock return value so the ``with`` statement's
+        __enter__/__exit__ protocol is satisfied without touching the network.
+        CONFIG_PATH is redirected to a non-existent temp path so read_config()
+        returns {} (defaults) and no real config file is read.
+        """
+        monkeypatch.setattr(ccr_config, "CONFIG_PATH", tmp_path / "config.json")
+        monkeypatch.setattr(socket, "create_connection", lambda addr, timeout: MagicMock())
         assert ccr_config.ccr_running() is True
 
-    def test_returns_false_when_oserror(self, monkeypatch):
-        """Returns False when create_connection raises OSError."""
+    def test_returns_false_when_oserror(self, tmp_path, monkeypatch):
+        """Returns False when create_connection raises OSError.
+
+        CONFIG_PATH is redirected to a non-existent temp path so read_config()
+        returns {} (defaults) and no real config file is read.
+        """
+        monkeypatch.setattr(ccr_config, "CONFIG_PATH", tmp_path / "config.json")
         def _fail(addr, timeout):
             raise OSError("connection refused")
         monkeypatch.setattr(socket, "create_connection", _fail)
@@ -312,6 +325,7 @@ class TestCcrRunning:
         captured = {}
         def _capture(addr, timeout):
             captured["addr"] = addr
+            return MagicMock()
         monkeypatch.setattr(socket, "create_connection", _capture)
         ccr_config.ccr_running()
         assert captured["addr"] == ("10.0.0.1", 9999)
@@ -322,6 +336,7 @@ class TestCcrRunning:
         captured = {}
         def _capture(addr, timeout):
             captured["addr"] = addr
+            return MagicMock()
         monkeypatch.setattr(socket, "create_connection", _capture)
         ccr_config.ccr_running()
         assert captured["addr"] == ("127.0.0.1", 3456)

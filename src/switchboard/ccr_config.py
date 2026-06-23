@@ -138,8 +138,8 @@ def ccr_running() -> bool:
     host: str = cfg.get("HOST", "127.0.0.1")
     port: int = cfg.get("PORT", 3456)
     try:
-        socket.create_connection((host, port), timeout=1)
-        return True
+        with socket.create_connection((host, port), timeout=1):
+            return True
     except OSError:
         return False
 
