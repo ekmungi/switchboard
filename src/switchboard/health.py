@@ -9,6 +9,7 @@ from .ccr_config import ROLES
 from .guard import MIN_CONTEXT
 
 __all__ = [
+    "model_problem",
     "effective_model",
     "apikey_blank",
     "websearch_online",
@@ -92,65 +93,67 @@ def websearch_online(cfg: dict) -> bool:
     return router.get("webSearch", "").endswith(":online")
 
 
+def model_problem(model_id: str, catalog: list[Model]) -> str | None:
+    """Return the problem suffix for a model id, or None when healthy.
+
+    Priority (first match wins): (1) Anthropic/Haiku leak -- always checked;
+    (2) not in catalog -- only when catalog non-empty; (3) context < MIN_CONTEXT.
+
+    Args:
+        model_id: Bare OpenRouter model id.
+        catalog:  Live catalog; empty list disables checks 2 and 3.
+
+    Returns:
+        Suffix string to append after ``"<role>: '<model>' "``, or None.
+    """
+    # Check 1: Anthropic/Haiku leak (catalog-independent).
+    if (
+        model_id.startswith("anthropic/")
+        or model_id.startswith("~anthropic/")
+        or "haiku" in model_id
+    ):
+        return "is an Anthropic/Haiku model (small/fast leak)"
+    # Checks 2 and 3 require a non-empty catalog.
+    if not catalog:
+        return None
+    catalog_ids: set[str] = {m.id for m in catalog}
+    # Check 2: not in catalog.
+    if model_id not in catalog_ids:
+        return "is not in the catalog"
+    # Check 3: context window too small.
+    catalog_ctx: dict[str, int] = {m.id: m.context_length for m in catalog}
+    ctx = catalog_ctx[model_id]
+    if ctx < MIN_CONTEXT:
+        return f"context {ctx:,} is below {MIN_CONTEXT:,}"
+    return None
+
+
 def role_warnings(cfg: dict, catalog: list[Model]) -> list[str]:
     """Build a list of human-readable warning strings for the health view.
 
-    Checks (per role in ROLES that is present in cfg['Router']):
-    - Anthropic/Haiku leak: model id starts with 'anthropic/' or '~anthropic/'
-      or contains 'haiku' (catalog-independent check, always performed).
-    - Not in catalog: model id not found in a non-empty catalog.
-    - Context too small: model context_length < MIN_CONTEXT (catalog check).
-
-    After per-role checks appends config-level warnings:
-    - CCR APIKEY is not blank.
-    - Web search is ON (':online').
+    Per-role checks are delegated to model_problem (Anthropic/Haiku leak,
+    not-in-catalog, context too small).  Config-level checks appended after:
+    APIKEY not blank and web search ON (':online').
 
     Args:
         cfg:     The full CCR config dict.
-        catalog: The list of Model instances from the live catalog.  When empty
-                 (e.g. offline), membership and context checks are skipped but
-                 the Anthropic/Haiku check still runs.
+        catalog: Live catalog list; when empty, membership/context checks skipped.
 
     Returns:
         A list of warning strings.  Empty list means everything is healthy.
     """
     router: dict = cfg.get("Router", {})
-    catalog_ids: set[str] = {m.id for m in catalog}
-    catalog_ctx: dict[str, int] = {m.id: m.context_length for m in catalog}
-
     warnings: list[str] = []
 
     for role in ROLES:
         if role not in router:
             continue
         model = _role_model(router[role])
+        p = model_problem(model, catalog)
+        if p:
+            warnings.append(f"{role}: '{model}' {p}")
 
-        # Anthropic / Haiku leak check (always, even offline).
-        # The broad "haiku" in model substring match is intentional: any model id
-        # that contains "haiku" (regardless of provider) is treated as a leak risk
-        # because it implies a small/fast Anthropic-class model that bypasses CCR
-        # APIKEY isolation.
-        if (
-            model.startswith("anthropic/")
-            or model.startswith("~anthropic/")
-            or "haiku" in model
-        ):
-            warnings.append(
-                f"{role}: '{model}' is an Anthropic/Haiku model (small/fast leak)"
-            )
-            continue  # skip catalog checks for this role
-
-        # Catalog membership and context checks (only when catalog is available)
-        if catalog:
-            if model not in catalog_ids:
-                warnings.append(f"{role}: '{model}' is not in the catalog")
-            elif catalog_ctx[model] < MIN_CONTEXT:
-                ctx = catalog_ctx[model]
-                warnings.append(
-                    f"{role}: '{model}' context {ctx:,} is below {MIN_CONTEXT:,}"
-                )
-
-    # Config-level checks
+    # Config-level checks (preserved exactly as before)
     if not apikey_blank(cfg):
         warnings.append("CCR APIKEY is not blank")
     if websearch_online(cfg):

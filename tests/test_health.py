@@ -8,6 +8,7 @@ import pytest
 from switchboard.catalog import Model
 from switchboard.health import (
     _role_model,
+    model_problem,
     effective_model,
     apikey_blank,
     websearch_online,
@@ -302,6 +303,75 @@ def test_role_warnings_tilde_anthropic_prefix_triggers_warning():
         f"Expected warning for background role with ~anthropic/ prefix, got: {warnings}"
     )
     assert any("Anthropic/Haiku" in w or "haiku" in w.lower() for w in warnings)
+
+
+# ---------------------------------------------------------------------------
+# model_problem
+# ---------------------------------------------------------------------------
+
+
+def test_model_problem_healthy_returns_none():
+    """model_problem returns None for a healthy large-context catalog model."""
+    result = model_problem(_MODEL_LARGE.id, [_MODEL_LARGE])
+    assert result is None
+
+
+def test_model_problem_haiku_detected_by_anthropic_prefix():
+    """model_problem detects 'anthropic/' prefix and returns the haiku suffix."""
+    result = model_problem("anthropic/claude-3-5-haiku", [_MODEL_LARGE])
+    assert result is not None
+    assert "Anthropic/Haiku" in result or "haiku" in result.lower()
+
+
+def test_model_problem_haiku_detected_by_tilde_prefix():
+    """model_problem detects '~anthropic/' prefix and returns the haiku suffix."""
+    result = model_problem("~anthropic/claude-haiku-3", [_MODEL_LARGE])
+    assert result is not None
+    assert "Anthropic/Haiku" in result or "haiku" in result.lower()
+
+
+def test_model_problem_haiku_detected_by_substring():
+    """model_problem detects 'haiku' anywhere in the id, regardless of provider."""
+    result = model_problem("somevendor/haiku-mini", [_MODEL_LARGE])
+    assert result is not None
+    assert "Anthropic/Haiku" in result or "haiku" in result.lower()
+
+
+def test_model_problem_not_in_catalog_with_non_empty_catalog():
+    """model_problem detects model absent from a non-empty catalog."""
+    result = model_problem(_MODEL_ABSENT.id, [_MODEL_LARGE])
+    assert result is not None
+    assert "not in the catalog" in result
+
+
+def test_model_problem_context_too_small():
+    """model_problem detects context below MIN_CONTEXT for a catalog model."""
+    result = model_problem(_MODEL_SMALL.id, [_MODEL_LARGE, _MODEL_SMALL])
+    assert result is not None
+    assert "context" in result
+    assert f"{_MODEL_SMALL.context_length:,}" in result
+
+
+def test_model_problem_empty_catalog_skips_membership_check():
+    """model_problem with empty catalog does NOT report not-in-catalog for a non-haiku model."""
+    result = model_problem(_MODEL_ABSENT.id, [])
+    # Absent model is not haiku/anthropic -> no problem in offline mode
+    assert result is None
+
+
+def test_model_problem_empty_catalog_still_flags_haiku():
+    """model_problem with empty catalog still flags the haiku/anthropic check."""
+    result = model_problem("anthropic/claude-3-5-haiku", [])
+    assert result is not None
+    assert "Anthropic/Haiku" in result or "haiku" in result.lower()
+
+
+def test_model_problem_haiku_check_wins_over_not_in_catalog():
+    """model_problem returns haiku suffix (not not-in-catalog) when both would apply."""
+    # anthropic/claude-3-5-haiku is not in _CATALOG_GOOD (which only has deepseek)
+    result = model_problem("anthropic/claude-3-5-haiku", [_MODEL_LARGE])
+    assert result is not None
+    assert "Anthropic/Haiku" in result  # haiku check fires, not not-in-catalog
 
 
 # ---------------------------------------------------------------------------

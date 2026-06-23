@@ -11,6 +11,7 @@ Usage:
   switchboard list [query]   # no query: list companies; with query: that company's models
   switchboard use <model-id> # pin all CCR roles to a model + restart CCR
   switchboard current        # show the active CCR routing
+  switchboard doctor         # run pass/fail health checks
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 Reads/writes ~/.claude-code-router/config.json.
@@ -28,6 +29,7 @@ from .ccr_config import (
     CONFIG_PATH,
     ROLES,
 )
+from .checks import run_checks, format_checks
 from .guard import validate_model
 from .health import status_lines
 from .render import print_table
@@ -137,12 +139,10 @@ def cmd_current() -> None:
         print("No Router config found at", CONFIG_PATH)
         return
 
-    # Routing table (preserved exactly)
     rows = [(role, router[role]) for role in ROLES if role in router]
     print("\nCurrent CCR routing:\n")
     _print_table([("ROLE", "left", 14), ("MODEL", "left", 44)], rows)
 
-    # Fetch catalog defensively so `current` never crashes offline.
     try:
         catalog = fetch_models()
     except Exception:
@@ -151,10 +151,24 @@ def cmd_current() -> None:
     if not catalog:
         print("(catalog unavailable -- offline checks skipped)")
 
-    # Status block (blank line separator matches previous output)
     print()
     for line in status_lines(cfg, catalog, ccr_running()):
         print(line)
+
+
+def cmd_doctor() -> None:
+    """Run pass/fail health checks; exit non-zero if any check fails."""
+    ccr_up = ccr_running()
+    try:
+        catalog = fetch_models()
+    except Exception:
+        catalog = []
+    checks = run_checks(read_config(), catalog, ccr_up)
+    print("\nSwitchboard doctor:\n")
+    for line in format_checks(checks):
+        print(line)
+    if any(not c.ok for c in checks):
+        sys.exit(1)
 
 
 def main() -> None:
@@ -178,6 +192,8 @@ def main() -> None:
         cmd_use(args[1])
     elif cmd == "current":
         cmd_current()
+    elif cmd == "doctor":
+        cmd_doctor()
     else:
         print(__doc__)
         sys.exit(1)
