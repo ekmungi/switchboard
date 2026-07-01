@@ -8,8 +8,9 @@ from dataclasses import dataclass
 from .catalog import Model
 from .ccr_config import ROLES
 from .health import apikey_blank, websearch_online, model_problem, role_model
+from .mcp_sync import SyncPlan
 
-__all__ = ["Check", "run_checks", "format_checks"]
+__all__ = ["Check", "run_checks", "format_checks", "mcp_parity_check"]
 
 
 @dataclass(frozen=True)
@@ -93,6 +94,30 @@ def run_checks(cfg: dict, catalog: list[Model], ccr_up: bool) -> list[Check]:
     ))
 
     return checks
+
+
+def mcp_parity_check(plan: SyncPlan) -> Check:
+    """Doctor check: is the CCR scope's MCP set mirrored from the user scope?
+
+    Args:
+        plan: A SyncPlan from mcp_sync.build_plan over the live state files.
+
+    Returns:
+        Passing Check with the mirrored count, or failing Check naming the
+        drifted count and pointing at `sb sync`.
+    """
+    drift = len(plan.adds) + len(plan.updates) + len(plan.orphans_managed)
+    if drift == 0:
+        return Check(
+            name="MCP parity (CCR scope)",
+            ok=True,
+            detail=f"{len(plan.in_sync)} server(s) mirrored",
+        )
+    return Check(
+        name="MCP parity (CCR scope)",
+        ok=False,
+        detail=f"{drift} server(s) drifted - run `sb sync` to inspect",
+    )
 
 
 def format_checks(checks: list[Check]) -> list[str]:

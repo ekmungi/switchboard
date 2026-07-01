@@ -1,11 +1,15 @@
 # test_cli_doctor.py - Tests for cli.cmd_doctor (pass/fail health checks via CLI).
 #
-# All external calls (fetch_models, read_config, ccr_running) are monkeypatched.
+# All external calls (fetch_models, read_config, ccr_running, current_plan) are
+# monkeypatched -- current_plan would otherwise read the real ~/.claude.json.
 # ---------------------------------------------------------------------------
 
 import pytest
-from switchboard import cli
+from switchboard import cli, mcp_sync
 from switchboard.catalog import Model
+
+# A drift-free plan so the MCP-parity check passes in these tests.
+_CLEAN_PLAN = mcp_sync.build_plan({}, {}, {})
 
 # ---------------------------------------------------------------------------
 # Shared catalog fixtures used by cmd_doctor tests
@@ -36,6 +40,7 @@ _CFG_DOCTOR_GOOD = {"APIKEY": "", "Router": _ROUTER_DOCTOR_GOOD}
 def test_cmd_doctor_all_pass_prints_pass_lines_and_no_sysexit(monkeypatch, capsys):
     """cmd_doctor with all-ok checks prints [PASS] lines and does not call sys.exit."""
     monkeypatch.setattr(cli, "ccr_running", lambda: True)
+    monkeypatch.setattr(cli, "current_plan", lambda: _CLEAN_PLAN)
     monkeypatch.setattr(cli, "fetch_models", lambda: list(_CATALOG_DOCTOR))
     monkeypatch.setattr(cli, "read_config", lambda: _CFG_DOCTOR_GOOD)
 
@@ -50,6 +55,7 @@ def test_cmd_doctor_all_pass_prints_pass_lines_and_no_sysexit(monkeypatch, capsy
 def test_cmd_doctor_failing_check_raises_sysexit_1(monkeypatch, capsys):
     """cmd_doctor exits with code 1 when at least one check fails."""
     monkeypatch.setattr(cli, "ccr_running", lambda: True)
+    monkeypatch.setattr(cli, "current_plan", lambda: _CLEAN_PLAN)
     monkeypatch.setattr(cli, "fetch_models", lambda: list(_CATALOG_DOCTOR))
     cfg = {"APIKEY": "sk-leaked", "Router": _ROUTER_DOCTOR_GOOD}
     monkeypatch.setattr(cli, "read_config", lambda: cfg)
@@ -65,6 +71,7 @@ def test_cmd_doctor_failing_check_raises_sysexit_1(monkeypatch, capsys):
 def test_cmd_doctor_ccr_down_shows_fail_line(monkeypatch, capsys):
     """cmd_doctor shows [FAIL] for CCR running when ccr_up is False."""
     monkeypatch.setattr(cli, "ccr_running", lambda: False)
+    monkeypatch.setattr(cli, "current_plan", lambda: _CLEAN_PLAN)
     monkeypatch.setattr(cli, "fetch_models", lambda: list(_CATALOG_DOCTOR))
     monkeypatch.setattr(cli, "read_config", lambda: _CFG_DOCTOR_GOOD)
 

@@ -28,6 +28,9 @@ sb current                           # show the current model and full health st
 sb doctor                            # pass/fail health check; exits non-zero on failure
 sb websearch on                      # enable web-augmented answers (appends :online, billed extra)
 sb websearch off                     # disable :online suffix (default)
+sb sync                              # audit: do CCR sessions see your MCP servers? (read-only)
+sb sync --apply                      # mirror missing/changed user-scope MCP servers into the CCR scope
+sb sync --prune                      # ...and also remove switchboard-added servers you deleted on the CC side
 ```
 
 ### Command details
@@ -48,6 +51,18 @@ all pass; exit code 1 = at least one failure. Use in scripts or CI to gate on he
 **`sb websearch on|off`** — toggles the `:online` suffix on the webSearch CCR role and
 restarts CCR. Turning it on enables web-augmented answers but incurs extra billing from
 OpenRouter. The `sb use` command always resets this to `off`.
+
+**`sb sync [--apply|--prune]`** — CCR launches its Claude Code sessions with
+`CLAUDE_CONFIG_DIR=~/.claude`, so those sessions read their user-scope MCP servers from
+`~/.claude/.claude.json` — NOT from `~/.claude.json` where yours are defined. Result:
+MCP servers you add on the Claude side silently don't exist in CCR sessions. `sb sync`
+audits every context surface (MCP by scope, plugins, CLAUDE.md, settings warnings) and,
+with `--apply`, mirrors the missing/changed servers into the CCR scope using
+`claude mcp add-json` (Claude's own writer — nothing is hand-edited, CCR internals are
+never touched, and no CCR restart is needed). Servers appear in the NEXT CCR-launched
+session. Run it from a plain session, a CCR session, or the terminal — identical result.
+Whenever you add a new MCP server, plugin, or connector on the Claude side, just run
+`/switchboard:sync --apply` (or `sb sync --apply`) once.
 
 (If `sb` is not found, open a NEW terminal so the profile reloads, or use the full form:
 `uv run --project "%USERPROFILE%\Dev\switchboard" python "%USERPROFILE%\Dev\switchboard\switchboard.py" list`.)

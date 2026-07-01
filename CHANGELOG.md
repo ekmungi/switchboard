@@ -6,6 +6,49 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [Unreleased] - 2026-07-02
+
+### P-003: `sync` — CC→CCR context audit + user-scope MCP mirror (SPEC-003)
+
+#### Added
+
+- `sb sync` subcommand (`sync [--apply] [--prune]`):
+  - Read-only audit of which Claude Code context surfaces reach CCR-launched
+    sessions: per-server MCP diff (user scope `~/.claude.json` vs the CCR
+    `CLAUDE_CONFIG_DIR` scope `~/.claude/.claude.json`), plugin passthrough,
+    global CLAUDE.md, plus WARNs for the CCR-managed `settings.json` env block
+    and the inert legacy `~/.claude-code-router/config.json` (CCR v3 stores
+    config in SQLite). Exit 1 on actionable drift.
+  - `--apply`: mirrors drifted user-scope MCP servers (stdio and http/sse) into
+    the CCR scope via `claude mcp add-json --scope user` under
+    `CLAUDE_CONFIG_DIR` — Claude's own writer; live state files are never
+    hand-edited; no CCR restart needed. Updates run remove + re-add (add-json
+    refuses to overwrite). Idempotent: a second apply is a no-op.
+  - `--prune`: removes only servers recorded in switchboard's sync manifest
+    (`~/.claude/.switchboard-sync-manifest.json`); user-added CCR-scope servers
+    are reported, never deleted.
+  - Secret hygiene: env values, http headers, and key-like fields are never
+    printed (reports show names only).
+- New modules: `claude_scopes.py` (config-surface readers + audit helpers),
+  `mcp_sync.py` (pure diff engine: normalize/fingerprint/build_plan/redact),
+  `sync_apply.py` (claude CLI runner + manifest), `sync_cmd.py` (orchestration).
+- `sb doctor` gains an `MCP parity (CCR scope)` check.
+- `/switchboard:sync` slash command (`commands/sync.md`); `sync` added to the
+  `/switchboard` argument hint. Works identically in plain and CCR sessions.
+- 48 new pytest tests (216 total), all hermetic; includes an ASCII-output
+  regression test for Windows cp1252 consoles.
+
+#### Fixed
+
+- User-scope MCP servers (markitdown, yt-transcribe, chrome-devtools,
+  smart-memory, plane, obsidian-vault) were invisible in sessions launched by
+  the CCR v3 Electron app / `ccr` CLI, because CCR sets
+  `CLAUDE_CONFIG_DIR=~/.claude` and the user scope relocates to
+  `~/.claude/.claude.json` (ISS-001; root-caused in R-005 against CCR v3.0.5
+  source). `sb sync --apply` closes the gap.
+
+---
+
 ## [Unreleased] - 2026-06-23
 
 ### P-002: Modular refactor and control-panel commands

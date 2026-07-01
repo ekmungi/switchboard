@@ -55,11 +55,13 @@ All commands run via the `sb` alias (or `uv run python switchboard.py`).
 | `sb current` | Show the effective model, which CCR roles are set, whether CCR is running, APIKEY-blank state, web-search state, and any health WARNINGS. |
 | `sb doctor` | Run a pass/fail health check suite; exits non-zero if any check fails. Checks CCR reachability, catalog access, APIKEY-blank, role consistency, and web-search state. |
 | `sb websearch on\|off` | Toggle the `:online` suffix on the `webSearch` role and restart CCR. `on` = web-augmented answers (billed extra); `off` = plain model. |
+| `sb sync [--apply\|--prune]` | Audit which Claude Code context surfaces route into CCR-launched sessions (MCP servers per scope, plugins, CLAUDE.md, settings warnings) and mirror user-scope MCP servers into CCR's `CLAUDE_CONFIG_DIR` scope. No flag = read-only report (exit 1 on drift). `--apply` mirrors drifted servers via `claude mcp add-json` (no CCR restart needed; servers appear in the next CCR session). `--prune` also removes servers switchboard previously added that are gone from the source. Secrets (env values, headers) are never printed. |
 
 ### Slash commands
 
 - `/catalog [keyword]` — browse the OpenRouter catalog from inside a Claude Code session (calls `sb list --md`).
-- `/switchboard [subcommand]` — run any control-panel command from inside a session (`current`, `doctor`, `use <model>`, `websearch on|off`, `list [keyword]`).
+- `/switchboard [subcommand]` — run any control-panel command from inside a session (`current`, `doctor`, `use <model>`, `websearch on|off`, `list [keyword]`, `sync [--apply|--prune]`).
+- `/switchboard:sync [--apply|--prune]` — the CC→CCR context audit + MCP mirror as its own command. Works identically from a plain Claude Code session and a CCR-launched session (the fix targets Claude's own config files, so where you run it from doesn't matter).
 
 ## Architecture
 
@@ -67,4 +69,14 @@ Routing tool: **claude-code-router (CCR)**. Switchboard reads and writes
 `~/.claude-code-router/config.json` and manages CCR lifecycle.
 
 Source lives in `src/switchboard/` (catalog, ccr_config, guard, health, checks,
-browse, render, cli modules) with a thin `switchboard.py` entry shim.
+browse, render, cli, claude_scopes, mcp_sync, sync_apply, sync_cmd modules) with a
+thin `switchboard.py` entry shim.
+
+**MCP-in-CCR note (CCR v3):** CCR launches claude sessions with
+`CLAUDE_CONFIG_DIR=~/.claude`, which relocates the user-scope state file to
+`~/.claude/.claude.json` — so user-scope MCP servers from `~/.claude.json` silently
+vanish in CCR sessions. `sb sync` closes that gap by mirroring them via
+`claude mcp add-json` (Claude's own writer; never hand-edits live state files, never
+touches CCR internals). Also note: on CCR v3 the legacy
+`~/.claude-code-router/config.json` is inert (config moved to SQLite) — `sb sync`
+warns about it; a control-panel rework for v3 is tracked separately.

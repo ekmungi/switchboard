@@ -1,6 +1,6 @@
 ---
 description: Switchboard control panel: show/guard the OpenRouter model driving Claude Code (current/doctor/use/websearch)
-argument-hint: "[current | doctor | use <model> | websearch on|off | list <keyword>]  (empty = usage/help)"
+argument-hint: "[current | doctor | use <model> | websearch on|off | list <keyword> | sync [--apply|--prune]]  (empty = usage/help)"
 allowed-tools: Bash(python:*)
 ---
 !`python "${CLAUDE_PLUGIN_ROOT}/switchboard.py" $ARGUMENTS`

@@ -13,6 +13,10 @@ Usage:
   switchboard current           # show the active CCR routing
   switchboard doctor            # run pass/fail health checks
   switchboard websearch on|off  # toggle webSearch :online suffix and restart CCR
+  switchboard sync [--apply] [--prune]
+                                # audit CC->CCR context; mirror user-scope MCP servers
+                                # into the CCR scope (--prune also removes
+                                # switchboard-added orphans)
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 Reads/writes ~/.claude-code-router/config.json.
@@ -32,10 +36,11 @@ from .ccr_config import (
     CONFIG_PATH,
     ROLES,
 )
-from .checks import run_checks, format_checks
+from .checks import run_checks, format_checks, mcp_parity_check
 from .guard import validate_model
 from .health import status_lines
 from .render import print_table
+from .sync_cmd import cmd_sync, current_plan
 
 _MARKDOWN: bool = False  # set by --md: emit markdown tables (used by the /catalog slash command)
 
@@ -119,13 +124,20 @@ def cmd_current() -> None:
 
 
 def cmd_doctor() -> None:
-    """Run pass/fail health checks; exit non-zero if any check fails."""
+    """Run pass/fail health checks; exit non-zero if any check fails.
+
+    Includes the MCP-parity check (SPEC-003 R8) when both user-scope state
+    files are readable; skipped silently otherwise (sync reports the error).
+    """
     ccr_up = ccr_running()
     try:
         catalog = fetch_models()
     except Exception:
         catalog = []
     checks = run_checks(read_config(), catalog, ccr_up)
+    plan = current_plan()
+    if plan is not None:
+        checks = [*checks, mcp_parity_check(plan)]
     print("\nSwitchboard doctor:\n")
     for line in format_checks(checks):
         print(line)
@@ -180,6 +192,8 @@ def main() -> None:
         cmd_doctor()
     elif cmd == "websearch" and len(args) > 1:
         cmd_websearch(args[1])
+    elif cmd == "sync":
+        cmd_sync(args[1:])
     else:
         print(__doc__)
         sys.exit(1)
