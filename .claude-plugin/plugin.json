@@ -1,7 +1,7 @@
 {
   "name": "switchboard",
-  "version": "0.3.0",
-  "description": "Control panel for driving Claude Code via OpenRouter/CCR: guarded model switching, health checks, web-search toggle, catalog browsing, and CC-to-CCR MCP/context sync.",
+  "version": "0.4.0",
+  "description": "Control panel for driving Claude Code via OpenRouter/CCR (v3 SQLite store and legacy config auto-detected): guarded model switching, health checks, web-search toggle, catalog browsing, and CC-to-CCR MCP/context sync.",
   "author": { "name": "ekmungi" },
   "repository": "https://github.com/ekmungi/switchboard",
   "keywords": ["openrouter", "claude-code-router", "ccr", "model-switching", "catalog"]

@@ -51,10 +51,10 @@ All commands run via the `sb` alias (or `uv run python switchboard.py`).
 | Command | Description |
 |---------|-------------|
 | `sb list [keyword]` | Browse the OpenRouter catalog. No keyword: list all providers. With keyword: models matching that provider or term. The `/catalog` slash command runs this with `--md` for a markdown table. |
-| `sb use <model>` | GUARDED: pin all CCR roles (including background) to the given model and restart CCR. Refuses if the model is unknown or has fewer than 64K context tokens; prints the nearest valid alternatives. Sets `webSearch` without `:online` (no surprise billing). Keeps the top-level APIKEY blank. |
-| `sb current` | Show the effective model, which CCR roles are set, whether CCR is running, APIKEY-blank state, web-search state, and any health WARNINGS. |
-| `sb doctor` | Run a pass/fail health check suite; exits non-zero if any check fails. Checks CCR reachability, catalog access, APIKEY-blank, role consistency, and web-search state. |
-| `sb websearch on\|off` | Toggle the `:online` suffix on the `webSearch` role and restart CCR. `on` = web-augmented answers (billed extra); `off` = plain model. |
+| `sb use <model>` | GUARDED: pin CCR to the given model. Refuses if the model is unknown or has fewer than 64K context tokens; prints the nearest valid alternatives. On CCR v3 it pins the claude-code launch profile's `model` + `smallFastModel` in the SQLite store (no small/fast leak; takes effect at the next CCR-launched session; whitelists the model for the gateway if needed). On legacy CCR it pins all roles and restarts CCR. Keeps the top-level APIKEY blank either way. |
+| `sb current` | Show the live routing state. On v3: store model, smallFastModel, the APPLIED `ANTHROPIC_MODEL` from settings.json with an in-sync/DRIFT verdict, daemon/APIKEY/web-search state, and a Router summary. On legacy: the role table + effective model and health WARNINGS. |
+| `sb doctor` | Run a pass/fail health check suite; exits non-zero if any check fails. On v3 adds: store readable, profile enabled, whitelist membership, applied-vs-store parity, and a legacy-hygiene check that FAILs while the inert old config.json/.bak files still exist (rotate the key, then delete them). |
+| `sb websearch on\|off` | Web-search (`:online`) control. On v3, `on` is refused -- there is no scoped webSearch role anymore, so `:online` would bill ALL traffic; `off` strips a stray suffix. On legacy CCR it toggles the `webSearch` role and restarts CCR. |
 | `sb sync [--apply\|--prune]` | Audit which Claude Code context surfaces route into CCR-launched sessions (MCP servers per scope, plugins, CLAUDE.md, settings warnings) and mirror user-scope MCP servers into CCR's `CLAUDE_CONFIG_DIR` scope. No flag = read-only report (exit 1 on drift). `--apply` mirrors drifted servers via `claude mcp add-json` (no CCR restart needed; servers appear in the next CCR session). `--prune` also removes servers switchboard previously added that are gone from the source. Secrets (env values, headers) are never printed. |
 
 ### Slash commands
@@ -65,11 +65,17 @@ All commands run via the `sb` alias (or `uv run python switchboard.py`).
 
 ## Architecture
 
-Routing tool: **claude-code-router (CCR)**. Switchboard reads and writes
-`~/.claude-code-router/config.json` and manages CCR lifecycle.
+Routing tool: **claude-code-router (CCR)**. Switchboard auto-detects the CCR
+config store: **v3** keeps everything in one SQLite blob
+(`%APPDATA%/claude-code-router/config.sqlite`) and switchboard drives the
+claude-code launch profile there (guarded targeted-merge writes with an
+in-store backup row; the provider api key is round-tripped untouched and never
+printed); **pre-v3** machines keep the original role-based
+`~/.claude-code-router/config.json` handling and `ccr restart` lifecycle.
 
-Source lives in `src/switchboard/` (catalog, ccr_config, guard, health, checks,
-browse, render, cli, claude_scopes, mcp_sync, sync_apply, sync_cmd modules) with a
+Source lives in `src/switchboard/` (catalog, ccr_config, ccr_store, ccr_v3,
+ccr_lifecycle, guard, health, health_v3, checks, checks_v3, browse, render,
+cli, cli_v3, claude_scopes, mcp_sync, sync_apply, sync_cmd modules) with a
 thin `switchboard.py` entry shim.
 
 **MCP-in-CCR note (CCR v3):** CCR launches claude sessions with
@@ -78,5 +84,7 @@ thin `switchboard.py` entry shim.
 vanish in CCR sessions. `sb sync` closes that gap by mirroring them via
 `claude mcp add-json` (Claude's own writer; never hand-edits live state files, never
 touches CCR internals). Also note: on CCR v3 the legacy
-`~/.claude-code-router/config.json` is inert (config moved to SQLite) — `sb sync`
-warns about it; a control-panel rework for v3 is tracked separately.
+`~/.claude-code-router/config.json` is inert (config moved to SQLite) — the control
+panel now drives the SQLite store directly, and `sb doctor` keeps failing its
+legacy-hygiene check until the old file (and its `.bak` copies) are deleted after
+rotating the key they contain.

@@ -1,7 +1,7 @@
 # Switchboard: browse OpenRouter models and point claude-code-router (CCR) at one.
 [project]
 name = "switchboard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Browse OpenRouter models and point claude-code-router (CCR) at one."
 requires-python = ">=3.12"
 dependencies = ["rich>=13"]

@@ -1,11 +1,12 @@
 # Switchboard — how to use it (the whole thing)
 
 ## 1. Start Claude Code on an open (OpenRouter) model
-In a terminal:
+In a terminal (CCR v3: launch a profile by name or id; `ccr code` was v1/v2):
 ```
-ccr code
+ccr default-claude-code
 ```
-This launches Claude Code running on an OpenRouter model instead of Anthropic.
+...or open the Claude Code profile from the CCR desktop app. Either way Claude
+Code runs on the OpenRouter model pinned in the profile instead of Anthropic.
 
 ## 2. Switch models WHILE inside a session
 Type this in the session (copy the MODEL from `sb list`):
@@ -23,11 +24,11 @@ For web search, append `:online`:
 sb list                              # show all companies (providers) + model counts
 sb list deepseek                     # drill into one company's models (+ switch hints)
 sb list qwen                         # ...or search by any keyword
-sb use deepseek/deepseek-v4-flash    # set this model as default + restart CCR
-sb current                           # show the current model and full health status
+sb use deepseek/deepseek-v4-flash    # pin this model (v3: launch profile; legacy: all roles)
+sb current                           # show the live model/routing state and full health status
 sb doctor                            # pass/fail health check; exits non-zero on failure
-sb websearch on                      # enable web-augmented answers (appends :online, billed extra)
-sb websearch off                     # disable :online suffix (default)
+sb websearch on                      # legacy only; refused on v3 (would bill ALL traffic)
+sb websearch off                     # strip the :online suffix (default state)
 sb sync                              # audit: do CCR sessions see your MCP servers? (read-only)
 sb sync --apply                      # mirror missing/changed user-scope MCP servers into the CCR scope
 sb sync --prune                      # ...and also remove switchboard-added servers you deleted on the CC side
@@ -35,22 +36,37 @@ sb sync --prune                      # ...and also remove switchboard-added serv
 
 ### Command details
 
-**`sb use <model>`** — GUARDED: the model must exist in the OpenRouter catalog and have
-at least 64K context. If validation fails, the command exits 1 (no config writes, no
-CCR restart) and prints the nearest valid alternatives. On success: all CCR roles
-(default, background, think, longContext, webSearch) are pinned to the model;
-webSearch is set WITHOUT `:online`; the top-level APIKEY is kept blank.
+Switchboard auto-detects the CCR generation: **v3** (config in SQLite at
+`%APPDATA%/claude-code-router/config.sqlite`) or **legacy** (role-based
+`~/.claude-code-router/config.json`). Same commands either way.
 
-**`sb current`** — prints the CCR routing table plus: effective model, CCR-running
-state, APIKEY-blank state, web-search state, and any WARNINGS (e.g. role mismatch,
-model below 64K, stale catalog).
+**`sb use <model>`** — GUARDED: the model must exist in the OpenRouter catalog and have
+at least 64K context. If validation fails, the command exits 1 (no config writes) and
+prints the nearest valid alternatives. On success (v3): the claude-code launch
+profile's `model` AND `smallFastModel` are pinned in the SQLite store (no small/fast
+leak), the model is added to the provider whitelist if missing (gateway reload only
+then), and the change lands at the NEXT CCR-launched session — CCR re-applies the
+profile at launch. On legacy: all CCR roles are pinned + CCR restarted. Both paths
+keep the top-level APIKEY blank. A pre-write copy of the whole config is kept in the
+store itself (`default.switchboard-bak` row) as a rollback safety net.
+
+**`sb current`** — v3: store model, smallFastModel, the APPLIED `ANTHROPIC_MODEL`
+from `~/.claude/settings.json` with an in-sync/DRIFT verdict, daemon/APIKEY/web-search
+state, and a Router summary (builtins/rules/fallback). Legacy: the role table plus
+effective model and WARNINGS.
 
 **`sb doctor`** — structured pass/fail output for every health check. Exit code 0 =
-all pass; exit code 1 = at least one failure. Use in scripts or CI to gate on health.
+all pass; exit code 1 = at least one failure. On v3 the suite covers: store readable,
+profile enabled + model set, model/smallFastModel leak+catalog+context checks,
+whitelist membership, applied-vs-store parity, APIKEY blank, MCP parity, and a
+**legacy-hygiene** check that keeps failing while the inert old
+`~/.claude-code-router/config.json` (+ `.bak` copies) still exist — rotate the
+OpenRouter key they contain, then delete them.
 
-**`sb websearch on|off`** — toggles the `:online` suffix on the webSearch CCR role and
-restarts CCR. Turning it on enables web-augmented answers but incurs extra billing from
-OpenRouter. The `sb use` command always resets this to `off`.
+**`sb websearch on|off`** — legacy: toggles the `:online` suffix on the webSearch CCR
+role and restarts CCR. v3: `on` is REFUSED — v3 has no scoped webSearch role, so
+`:online` would be billed on ALL traffic, not just web-search requests; `off` strips a
+stray suffix if some other tool set one.
 
 **`sb sync [--apply|--prune]`** — CCR launches its Claude Code sessions with
 `CLAUDE_CONFIG_DIR=~/.claude`, so those sessions read their user-scope MCP servers from
