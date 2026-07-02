@@ -1,6 +1,6 @@
 ---
 description: Browse/search the OpenRouter model catalog (via switchboard)
-argument-hint: [optional keyword, e.g. deepseek; empty = all providers]
+argument-hint: "[optional keyword, e.g. deepseek; empty = all providers]"
 allowed-tools: Bash(python:*)
 ---
 !`python "${CLAUDE_PLUGIN_ROOT}/switchboard.py" list $ARGUMENTS --md`

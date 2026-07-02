@@ -40,6 +40,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 #### Fixed
 
+- `/switchboard` showed no description or argument hint in the CLI: its
+  frontmatter `description` contained an unquoted `: ` (invalid YAML —
+  "mapping values are not allowed here"), so the whole frontmatter failed to
+  parse and Claude Code got no command metadata. Previously misattributed to a
+  CCR client limitation. Also quoted `/catalog`'s `argument-hint`, which
+  unquoted parsed as a YAML flow *list* instead of a string. All three command
+  files now YAML-validate. (Plugin 0.3.1.)
 - User-scope MCP servers (markitdown, yt-transcribe, chrome-devtools,
   smart-memory, plane, obsidian-vault) were invisible in sessions launched by
   the CCR v3 Electron app / `ccr` CLI, because CCR sets

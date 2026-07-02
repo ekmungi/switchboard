@@ -1,5 +1,5 @@
 ---
-description: Switchboard control panel: show/guard the OpenRouter model driving Claude Code (current/doctor/use/websearch)
+description: "Switchboard control panel: show/guard the OpenRouter model driving Claude Code (current/doctor/use/websearch/sync)"
 argument-hint: "[current | doctor | use <model> | websearch on|off | list <keyword> | sync [--apply|--prune]]  (empty = usage/help)"
 allowed-tools: Bash(python:*)
 ---
