@@ -9,17 +9,19 @@
 
 Usage:
   switchboard list [query]      # no query: list companies; with query: that company's models
-  switchboard use <model-id>    # pin all CCR roles to a model + restart CCR
+  switchboard use <model-id>    # pin the CCR model (v3: launch profile; legacy: all roles)
   switchboard current           # show the active CCR routing
   switchboard doctor            # run pass/fail health checks
-  switchboard websearch on|off  # toggle webSearch :online suffix and restart CCR
+  switchboard websearch on|off  # web-search :online toggle (v3: 'on' refused - all-traffic billing)
   switchboard sync [--apply] [--prune]
                                 # audit CC->CCR context; mirror user-scope MCP servers
                                 # into the CCR scope (--prune also removes
                                 # switchboard-added orphans)
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
-Reads/writes ~/.claude-code-router/config.json.
+The CCR store is auto-detected: v3 (SQLite at %APPDATA%/claude-code-router)
+drives the claude-code launch profile; pre-v3 machines keep the legacy
+role-based ~/.claude-code-router/config.json behavior unchanged.
 """
 import sys
 
@@ -36,7 +38,9 @@ from .ccr_config import (
     CONFIG_PATH,
     ROLES,
 )
+from .ccr_store import detect_store
 from .checks import run_checks, format_checks, mcp_parity_check
+from .cli_v3 import current_v3, doctor_v3, use_v3, websearch_v3
 from .guard import validate_model
 from .health import status_lines
 from .render import print_table
@@ -80,6 +84,9 @@ def cmd_use(model_id: str) -> None:
         sys.exit(1)
 
     model = next(m for m in catalog if m.id == model_id)
+    if detect_store() == "v3":
+        use_v3(model_id, model)
+        return
     cfg = read_config()
     cfg = set_all_roles(cfg, model_id, online=False)
     cfg = ensure_apikey_blank(cfg)
@@ -100,6 +107,9 @@ def cmd_current() -> None:
     health.status_lines.  Never crashes on a catalog fetch failure (offline
     mode: catalog checks are skipped).
     """
+    if detect_store() == "v3":
+        current_v3(_MARKDOWN)
+        return
     cfg = read_config()
     router = cfg.get("Router", {})
     if not router:
@@ -129,6 +139,9 @@ def cmd_doctor() -> None:
     Includes the MCP-parity check (SPEC-003 R8) when both user-scope state
     files are readable; skipped silently otherwise (sync reports the error).
     """
+    if detect_store() == "v3":
+        doctor_v3()
+        return
     ccr_up = ccr_running()
     try:
         catalog = fetch_models()
@@ -160,6 +173,9 @@ def cmd_websearch(state: str) -> None:
     if state not in ("on", "off"):
         print("Usage: sb websearch on|off")
         sys.exit(1)
+    if detect_store() == "v3":
+        websearch_v3(state)
+        return
     cfg = read_config()
     cfg = set_websearch_online(cfg, state == "on")
     write_config(cfg)
