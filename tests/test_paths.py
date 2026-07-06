@@ -37,3 +37,9 @@ class TestDerivedPaths:
         assert paths.proxy_config_path(tmp_path).name == "proxy.yaml"
         assert paths.proxy_pidfile(tmp_path).name == "proxy.pid"
         assert paths.proxy_logfile(tmp_path).name == "proxy.log"
+
+    def test_active_profile_path(self, tmp_path):
+        """The active profile is stored as profile.json under the home dir."""
+        p = paths.active_profile_path(tmp_path)
+        assert p.parent == paths.home_dir(tmp_path)
+        assert p.name == "profile.json"

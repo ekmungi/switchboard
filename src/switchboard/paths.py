@@ -43,3 +43,8 @@ def proxy_pidfile(root: Path | None = None) -> Path:
 def proxy_logfile(root: Path | None = None) -> Path:
     """Return the path of the proxy's redirected stdout/stderr log."""
     return home_dir(root) / "proxy.log"
+
+
+def active_profile_path(root: Path | None = None) -> Path:
+    """Return the path of the active model profile (v1 stores a single profile)."""
+    return home_dir(root) / "profile.json"
