@@ -6,7 +6,8 @@ import sys
 
 import pytest
 
-from switchboard import cli, launch, setup
+from switchboard import cli, launch, profiles, setup, translator_checks
+from switchboard.checks import Check
 from switchboard.launch import LaunchResult
 from switchboard.setup import SetupResult
 
@@ -90,3 +91,30 @@ class TestCodeDispatch:
             cli.main()
         assert exc.value.code == 1
         assert "sb setup" in capsys.readouterr().out
+
+
+class TestDoctorDispatch:
+    """`sb doctor` routes to the translator doctor when a profile exists."""
+
+    def test_translator_doctor_when_profile_present(self, monkeypatch, capsys):
+        prof = profiles.default_profile("z-ai/glm-4.6", "deepseek/deepseek-chat")
+        monkeypatch.setattr(profiles, "load", lambda path: prof)
+        monkeypatch.setattr(
+            translator_checks, "gather_checks",
+            lambda profile, **k: [Check(name="proxy health", ok=True, detail="serving")],
+        )
+        monkeypatch.setattr(sys, "argv", ["sb", "doctor"])
+        cli.main()
+        assert "translator" in capsys.readouterr().out.lower()
+
+    def test_translator_doctor_exits_nonzero_on_failed_check(self, monkeypatch):
+        prof = profiles.default_profile("z-ai/glm-4.6", "deepseek/deepseek-chat")
+        monkeypatch.setattr(profiles, "load", lambda path: prof)
+        monkeypatch.setattr(
+            translator_checks, "gather_checks",
+            lambda profile, **k: [Check(name="tool-use gate", ok=False, detail="failed")],
+        )
+        monkeypatch.setattr(sys, "argv", ["sb", "doctor"])
+        with pytest.raises(SystemExit) as exc:
+            cli.main()
+        assert exc.value.code == 1

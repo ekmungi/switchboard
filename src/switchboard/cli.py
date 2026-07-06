@@ -29,7 +29,7 @@ role-based ~/.claude-code-router/config.json behavior unchanged.
 """
 import sys
 
-from . import launch, setup
+from . import launch, paths, profiles, setup, translator_checks
 from .browse import cmd_list
 from .catalog import fetch_models
 from .ccr_config import (
@@ -141,9 +141,21 @@ def cmd_current() -> None:
 def cmd_doctor() -> None:
     """Run pass/fail health checks; exit non-zero if any check fails.
 
-    Includes the MCP-parity check (SPEC-003 R8) when both user-scope state
-    files are readable; skipped silently otherwise (sync reports the error).
+    When the clean translator is set up (an active profile exists), this reports
+    the translator's health (SPEC-005 R5/R5a): engine pin, proxy health,
+    cost-safety, nothing-global, and a real tool-use round-trip. Otherwise it
+    falls back to the CCR doctor (deprecated path). Includes the MCP-parity check
+    (SPEC-003 R8) when both user-scope state files are readable.
     """
+    profile = profiles.load(paths.active_profile_path())
+    if profile is not None:
+        checks = translator_checks.gather_checks(profile)
+        print("\nSwitchboard doctor (translator):\n")
+        for line in format_checks(checks):
+            print(line)
+        if any(not c.ok for c in checks):
+            sys.exit(1)
+        return
     if detect_store() == "v3":
         doctor_v3()
         return

@@ -19,6 +19,25 @@ def reset_markdown():
 
 
 @pytest.fixture(autouse=True)
+def isolate_switchboard_profile(tmp_path_factory, monkeypatch):
+    """Point the DEFAULT active-profile path at an isolated empty dir.
+
+    Without this, `sb doctor` (which routes to the translator doctor when a
+    profile exists) would read the real ~/.switchboard/profile.json on a machine
+    where setup has run, making the CCR-doctor tests non-deterministic. Callers
+    that pass an explicit root (the translator tests) are untouched.
+    """
+    from switchboard import paths
+
+    real = paths.active_profile_path
+    isolated = tmp_path_factory.mktemp("sb_home") / "profile.json"
+    monkeypatch.setattr(
+        paths, "active_profile_path",
+        lambda root=None: real(root) if root is not None else isolated,
+    )
+
+
+@pytest.fixture(autouse=True)
 def force_legacy_store(monkeypatch):
     """Pin cli's store detection to 'legacy' for hermeticity.
 
