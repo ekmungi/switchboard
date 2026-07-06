@@ -17,6 +17,10 @@ Usage:
                                 # audit CC->CCR context; mirror user-scope MCP servers
                                 # into the CCR scope (--prune also removes
                                 # switchboard-added orphans)
+  switchboard setup             # one-command clean-translator setup (SPEC-005): pinned
+                                # engine + key + default profile + proxy + tool-use gate
+  switchboard code [<model>]    # launch claude via the local translator (full OpenRouter
+                                # catalog); optional model switches the main tier
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 The CCR store is auto-detected: v3 (SQLite at %APPDATA%/claude-code-router)
@@ -25,6 +29,7 @@ role-based ~/.claude-code-router/config.json behavior unchanged.
 """
 import sys
 
+from . import launch, setup
 from .browse import cmd_list
 from .catalog import fetch_models
 from .ccr_config import (
@@ -183,6 +188,40 @@ def cmd_websearch(state: str) -> None:
     restart_ccr()
 
 
+def cmd_setup() -> None:
+    """Run the one-command clean-translator setup and report each step (SPEC-005 R1).
+
+    Prints the step outcomes then the ready line, or exits 1 on a clear failure.
+    """
+    result = setup.run_setup()
+    print("\nSwitchboard setup:\n")
+    for step in result.steps:
+        print(f"  [ok] {step}")
+    print()
+    if result.ok:
+        print(result.message)
+    else:
+        print(f"FAILED: {result.message}")
+        sys.exit(1)
+
+
+def cmd_code(model: str | None) -> None:
+    """Launch claude via the local translator (sb code [<model>]).
+
+    Surfaces the cached-login advisory before the (blocking) launch, then exits
+    with claude's own exit code, or 1 with a clear message on failure.
+
+    Args:
+        model: Optional OpenRouter model id to make this session's main tier.
+    """
+    print(launch.LOGOUT_NOTE)
+    result = launch.run_code(model)
+    if not result.ok:
+        print(f"sb code: {result.message}")
+        sys.exit(1)
+    sys.exit(result.exit_code or 0)
+
+
 def main() -> None:
     """Dispatch the chosen subcommand from sys.argv.
 
@@ -210,6 +249,10 @@ def main() -> None:
         cmd_websearch(args[1])
     elif cmd == "sync":
         cmd_sync(args[1:])
+    elif cmd == "setup":
+        cmd_setup()
+    elif cmd == "code":
+        cmd_code(args[1] if len(args) > 1 else None)
     else:
         print(__doc__)
         sys.exit(1)
