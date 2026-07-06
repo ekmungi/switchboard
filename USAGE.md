@@ -1,6 +1,34 @@
 # Switchboard — how to use it (the whole thing)
 
-## 1. Start Claude Code on an open (OpenRouter) model
+## 0. Clean translator (recommended) — `sb setup` once, then `sb code`
+
+The current path runs a managed local translator (embedded LiteLLM) so Claude Code uses
+the full OpenRouter catalog with nothing written to your global config.
+
+```
+sb setup                        # once: pinned engine + key + default profile + proxy + tool-use gate
+sb code                         # launch claude on the default model via the local proxy
+sb code z-ai/glm-4.6            # ...or choose a model for this session (switches the main tier)
+sb doctor                       # engine pin, proxy, cost-safety, nothing-global, tool-use gate
+claude                          # plain claude = your Max subscription, untouched
+```
+
+- **Key:** `sb setup` reads `OPENROUTER_API_KEY` from `~/.env_claude`, or prompts once
+  and appends it there. It never lands in `~/.claude/settings.json` and is never printed.
+- **Reused daemon:** the proxy (loopback `127.0.0.1:4000` by default) starts once and is
+  reused across `sb code` launches; teardown is just closing the `claude` process.
+- **Model switch:** `sb code <model>` persists the new main tier, regenerates the proxy
+  config, and restarts the proxy. `anthropic/*` and passthrough wildcards are refused
+  (they'd leak metered Claude pricing).
+- **Cached-login gotcha (R-007):** if Claude Code still uses Max instead of the proxy,
+  run `/logout` inside it once — a cached login can override `ANTHROPIC_BASE_URL`.
+
+Everything below (`ccr`, `sb use`, in-session `/model openrouter,...`) is the **legacy
+CCR-driving path**, retained but **deprecated**.
+
+---
+
+## 1. (Legacy CCR) Start Claude Code on an open (OpenRouter) model
 In a terminal (CCR v3: launch a profile by name or id; `ccr code` was v1/v2):
 ```
 ccr default-claude-code

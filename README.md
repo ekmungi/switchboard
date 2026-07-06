@@ -1,9 +1,37 @@
 # Switchboard
 
-Connect the Claude Code harness to non-Anthropic open models via **OpenRouter**, and
-switch between Anthropic and OpenRouter models (ideally mid-session).
+Run the Claude Code CLI on **any OpenRouter model** through a **managed local
+translator** — one-command setup, nothing written to your global config, and plain
+`claude` (Max) left untouched.
 
-## Objective
+## Quick start (clean translator — recommended)
+
+Switchboard runs its own local Anthropic→OpenAI translator (embedded LiteLLM, pinned)
+so Claude Code can talk to the full OpenRouter catalog. Nothing global is touched: the
+proxy binds loopback only, the key stays in `~/.env_claude`, and `sb code` sets the
+redirect only in the child `claude` process.
+
+```
+sb setup                       # once: pinned engine + key + default profile + proxy + tool-use gate
+sb code                        # launch claude on the default OpenRouter model via the local proxy
+sb code deepseek/deepseek-chat # ...or pick a model for this session (switches the main tier)
+sb doctor                      # health: engine pin, proxy, cost-safety, nothing-global, tool-use gate
+claude                         # plain claude = your Max subscription, untouched
+```
+
+`sb setup` prompts once for an OpenRouter key (or reads it from `~/.env_claude`),
+installs the pinned engine into a switchboard-owned venv (no toolchain step), and ends
+either "ready" or with a clear failure. Requires **uv** and **Python 3.12+**.
+
+**Cost-safety:** every tier (including background/subagent calls) maps to an explicit
+cheap OpenRouter model with a concrete cheap catch-all — never a passthrough, never a
+Claude-priced `anthropic/*` model — so a long multi-agent session can't silently leak
+metered Claude pricing. `sb doctor` asserts this.
+
+> The older **CCR-driving** path (`sb use` / `current` / `websearch`, below) is
+> **deprecated** but still works while the clean translator is proven on-device.
+
+## Objective (project background)
 
 1. Prove an OpenRouter model can drive Claude Code; measure setup complexity.
 2. Determine whether existing skills, slash commands, MCP servers, hooks, and
@@ -14,11 +42,13 @@ switch between Anthropic and OpenRouter models (ideally mid-session).
 
 Switchboard has two install surfaces — Claude Code **slash commands** and the terminal **`sb`** command — both sitting on prerequisites you provide once per machine.
 
-**Prerequisites (not shipped — switchboard only *drives* the engine, it isn't the engine):**
-- **Python 3.12+** (the CLI and slash commands run on it).
+**For the clean translator (recommended):**
+- **Python 3.12+** and **uv** (`sb setup` installs the pinned engine into its own venv).
+- An **OpenRouter API key** in `~/.env_claude` as `OPENROUTER_API_KEY=...` (or let `sb setup` prompt once and write it). Then just run `sb setup`.
+
+**For the legacy CCR-driving path only (deprecated):**
 - **claude-code-router** (the routing engine): `npm install -g @musistudio/claude-code-router`.
 - An **OpenRouter API key** placed in `~/.claude-code-router/config.json` (kept out of git; the installer scaffolds that file with a placeholder for you to fill).
-- Optional: **uv** (for pretty terminal tables via `rich`; the tool still works on plain Python).
 
 ### A. As a Claude Code plugin (the slash commands, fully portable)
 
@@ -48,6 +78,16 @@ Full walkthrough, the CCR-only hook explained, and troubleshooting: see [INSTALL
 
 All commands run via the `sb` alias (or `uv run python switchboard.py`).
 
+**Clean translator (recommended):**
+
+| Command | Description |
+|---------|-------------|
+| `sb setup` | One-command, idempotent: installs the pinned engine into a switchboard-owned venv, resolves the OpenRouter key (prompt once → `~/.env_claude`), generates a default profile, starts the local proxy, and runs the tool-use gate. Ends "ready" or a clear failure. |
+| `sb code [<model>]` | Ensure the proxy is up (daemon reused) and launch `claude` against it via a per-session env — nothing written to `settings.json`. Optional model switches the main tier (refuses `anthropic/*` / passthrough). |
+| `sb doctor` | With the translator set up: engine-pin, proxy health, cost-safety (no `anthropic/*`, no passthrough), nothing-global (`settings.json` clean), a real tool-use round-trip, and a spend-cap advisory. |
+
+**Legacy (CCR-driving, deprecated):**
+
 | Command | Description |
 |---------|-------------|
 | `sb list [keyword]` | Browse the OpenRouter catalog. No keyword: list all providers. With keyword: models matching that provider or term. The `/catalog` slash command runs this with `--md` for a markdown table. |
@@ -65,18 +105,31 @@ All commands run via the `sb` alias (or `uv run python switchboard.py`).
 
 ## Architecture
 
-Routing tool: **claude-code-router (CCR)**. Switchboard auto-detects the CCR
-config store: **v3** keeps everything in one SQLite blob
-(`%APPDATA%/claude-code-router/config.sqlite`) and switchboard drives the
-claude-code launch profile there (guarded targeted-merge writes with an
-in-store backup row; the provider api key is round-tripped untouched and never
-printed); **pre-v3** machines keep the original role-based
-`~/.claude-code-router/config.json` handling and `ccr restart` lifecycle.
+**Clean translator (primary).** Switchboard runs a **managed local
+Anthropic→OpenAI translator** — embedded **LiteLLM, pinned `litellm==1.81.14`**
+(engine chosen and locked by a Windows viability + tool-use spike, R-008) — in a
+switchboard-owned uv venv under `~/.switchboard`. The proxy binds `127.0.0.1` only.
+`sb code` points Claude Code at it via a **per-session** `ANTHROPIC_BASE_URL` (the
+child process env only — `settings.json` is never touched), so plain `claude` keeps
+using your Max subscription. The generated proxy config maps every tier to an explicit
+cheap OpenRouter model with a concrete cheap catch-all (cost-safe by construction). On
+Windows the engine is spawned with `PYTHONUTF8=1` (its startup banner crashes under
+cp1252 when its output is redirected).
 
-Source lives in `src/switchboard/` (catalog, ccr_config, ccr_store, ccr_v3,
-ccr_lifecycle, guard, health, health_v3, checks, checks_v3, browse, render,
-cli, cli_v3, claude_scopes, mcp_sync, sync_apply, sync_cmd modules) with a
-thin `switchboard.py` entry shim.
+Translator modules (`src/switchboard/`): `translator_engine` (engine interface +
+LiteLLM adapter), `translator_lifecycle` (proxy daemon on loopback + reuse),
+`cost_safety` (the shared R3a/R5a guard), `profiles`, `keystore`, `setup`, `launch`,
+`verify` (tool-use gate), `translator_checks` (doctor), `paths`.
+
+**Legacy CCR-driving (deprecated).** The earlier path drives **claude-code-router
+(CCR)**: switchboard auto-detects the CCR config store — **v3** (SQLite blob at
+`%APPDATA%/claude-code-router/config.sqlite`, guarded targeted-merge writes with an
+in-store backup; provider api key round-tripped untouched, never printed) or **pre-v3**
+(role-based `~/.claude-code-router/config.json` + `ccr restart`). Modules: catalog,
+ccr_config, ccr_store, ccr_v3, ccr_lifecycle, guard, health, health_v3, checks,
+checks_v3, browse, render, cli, cli_v3, claude_scopes, mcp_sync, sync_apply, sync_cmd —
+with a thin `switchboard.py` entry shim. This path is retained but will be removed once
+the clean translator is proven on-device.
 
 **MCP-in-CCR note (CCR v3):** CCR launches claude sessions with
 `CLAUDE_CONFIG_DIR=~/.claude`, which relocates the user-scope state file to

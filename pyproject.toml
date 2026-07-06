@@ -1,8 +1,8 @@
-# Switchboard: browse OpenRouter models and point claude-code-router (CCR) at one.
+# Switchboard: run Claude Code on the full OpenRouter catalog via a managed local translator.
 [project]
 name = "switchboard"
-version = "0.3.0"
-description = "Browse OpenRouter models and point claude-code-router (CCR) at one."
+version = "0.4.0"
+description = "Run Claude Code on any OpenRouter model via a managed local Anthropic->OpenAI translator (CCR-driving retained as a deprecated path)."
 requires-python = ">=3.12"
 dependencies = ["rich>=13"]
 

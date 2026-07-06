@@ -6,6 +6,68 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ---
 
+## [0.4.0] - 2026-07-06
+
+### P-005: clean-translator launcher — full OpenRouter catalog for Claude Code (SPEC-005)
+
+A pivot off CCR-driving (DEC-009): switchboard now runs its own **managed local
+Anthropic→OpenAI translator** (embedded LiteLLM, pinned `litellm==1.81.14`; engine
+locked by the Phase-0 spike R-008) so Claude Code (CLI) can use **any OpenRouter
+model** with **zero global pollution** and **one-command setup**. The CCR-driving
+commands are retained but **deprecated** (see below).
+
+#### Added
+
+- **`sb setup`** — one command, idempotent: ensures prerequisites (uv + the pinned
+  engine in a switchboard-owned uv venv, no user toolchain step), prompts **once**
+  for the OpenRouter key (read from / persisted to `~/.env_claude`, never
+  `settings.json`), generates a default model profile, starts the local proxy, and
+  runs the tool-use self-test — ending "ready" or a clear failure.
+- **`sb code [<model>]`** — ensures the proxy is up (daemon reused across launches),
+  sets a **per-session** env (`ANTHROPIC_BASE_URL` → the loopback proxy, a placeholder
+  auth token that is *not* the OpenRouter key, and the per-tier model strings) and runs
+  `claude`. **Nothing is written to `~/.claude/settings.json`** — plain `claude` (Max)
+  is untouched; teardown is just closing the process. An optional model arg switches the
+  main tier (refuses `anthropic/*` and passthrough wildcards; regenerates config +
+  restarts the proxy). Surfaces the `/logout` cached-login advisory (R-007).
+- **`sb doctor`** now reports the **translator's** health when a profile exists:
+  engine pinned to `1.81.14`, proxy health, **cost-safety** (no tier resolves to a
+  Claude-priced `anthropic/*` model and no passthrough catch-all — R5a), **nothing
+  global** (no `ANTHROPIC_BASE_URL` env block in `settings.json`), a real tool-use
+  round-trip through the proxy, and a spend-cap advisory. Falls back to the CCR doctor
+  when the translator is not set up.
+- New modules (`src/switchboard/`): `translator_engine.py` (engine interface +
+  LiteLLM adapter: cost-safe config generation, pinned install, launch argv/env with
+  `PYTHONUTF8=1` on Windows — R11), `translator_lifecycle.py` (proxy daemon
+  start/stop/status/health on loopback + reuse; readiness waits on HTTP health, not a
+  bare TCP bind), `cost_safety.py` (the single R3a/R5a guard shared by config-gen and
+  doctor), `profiles.py` (tier-map profile storage), `keystore.py` (key from
+  `~/.env_claude`), `setup.py`, `launch.py`, `verify.py` (the tool-use gate, ported
+  from the spike), `translator_checks.py` (translator doctor), `paths.py`
+  (`~/.switchboard` home).
+- New hermetic pytest suites across the 10 new modules (450 tests total): engine
+  install/spawn, daemon lifecycle, cost-safety, profiles, keystore, the one-command
+  setup flow, the launcher, the tool-use gate, and the doctor — all with injected
+  subprocess/socket/HTTP/spawn seams (no live network or proxy in the units).
+
+#### Security
+
+- Cost-safety by construction (R3a): the generated proxy config maps every tier to an
+  explicit cheap OpenRouter model plus a **concrete cheap catch-all** — never a
+  passthrough wildcard, never `anthropic/*` — so background/subagent calls can't leak
+  metered Claude pricing. `sb doctor` re-asserts this at rest (R5a) via the same
+  predicate. The OpenRouter key lives only in `~/.env_claude` and the proxy's own env;
+  it is never written to `settings.json`, never printed, and `ANTHROPIC_*` is scrubbed
+  from the proxy's child environment.
+
+#### Deprecated
+
+- The CCR-driving commands (`sb use` / `current` / `websearch` and the v3 store
+  integration, SPEC-004) are **retained but deprecated** in favor of the clean
+  translator (R8). A follow-up will remove them once the new path is proven on-device.
+
+---
+
 ## [Unreleased] - 2026-07-02
 
 ### P-004: v3-compatible control panel (SPEC-004)
