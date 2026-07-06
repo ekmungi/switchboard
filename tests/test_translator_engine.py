@@ -221,6 +221,17 @@ class TestInstalledVersion:
         run = recorder([FakeProc(returncode=0, stdout="   ")])
         assert eng.installed_version(run) is None
 
+    def test_probe_reads_distribution_metadata_not_dunder_version(self, tmp_path):
+        """litellm exposes no __version__ attribute (it overrides __getattr__ to raise),
+        so the probe MUST read the installed distribution metadata."""
+        eng = nt_engine(tmp_path)
+        _touch_python(eng)
+        run = recorder([FakeProc(returncode=0, stdout=PIN)])
+        eng.installed_version(run)
+        probe = " ".join(run.calls[0])
+        assert "importlib.metadata" in probe
+        assert "__version__" not in probe
+
 
 class TestEnsureInstalled:
     """Tests for LiteLLMEngine.ensure_installed."""

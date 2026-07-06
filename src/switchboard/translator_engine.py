@@ -201,8 +201,12 @@ class LiteLLMEngine:
         py = self._python()
         if not py.exists():
             return None
+        # litellm has no __version__ attribute (it overrides __getattr__ to raise),
+        # so read the installed distribution metadata instead -- also avoids importing
+        # the heavy module just to learn its version.
+        dist = self.package.split("[")[0]
         proc = run(
-            [str(py), "-c", "import litellm, sys; sys.stdout.write(litellm.__version__)"],
+            [str(py), "-c", f"import importlib.metadata as m, sys; sys.stdout.write(m.version({dist!r}))"],
             capture_output=True,
             text=True,
         )
