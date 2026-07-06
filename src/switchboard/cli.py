@@ -21,6 +21,7 @@ Usage:
                                 # engine + key + default profile + proxy + tool-use gate
   switchboard code [<model>]    # launch claude via the local translator (full OpenRouter
                                 # catalog); optional model switches the main tier
+  switchboard stop              # stop the local translator proxy daemon
 
 Run via `uv run` (or the `sb` alias) so the `rich` dependency is available.
 The CCR store is auto-detected: v3 (SQLite at %APPDATA%/claude-code-router)
@@ -29,7 +30,7 @@ role-based ~/.claude-code-router/config.json behavior unchanged.
 """
 import sys
 
-from . import launch, paths, profiles, setup, translator_checks
+from . import launch, paths, profiles, setup, translator_checks, translator_lifecycle
 from .browse import cmd_list
 from .catalog import fetch_models
 from .ccr_config import (
@@ -234,6 +235,28 @@ def cmd_code(model: str | None) -> None:
     sys.exit(result.exit_code or 0)
 
 
+def cmd_stop() -> None:
+    """Stop the local translator proxy daemon (sb stop).
+
+    Loads the active profile only to learn which loopback port the proxy binds,
+    then hands off to translator_lifecycle.stop, which signals the recorded PID,
+    clears the pidfile, and waits (synchronously) for the port to be released.
+    Reports whether a live daemon was actually stopped or it was already down.
+
+    With no active profile there is nothing running and no known port, so this
+    prints a hint and returns without attempting a teardown.
+    """
+    profile = profiles.load(paths.active_profile_path())
+    if profile is None:
+        print("No active profile -- nothing to stop (run `sb setup` first).")
+        return
+    stopped = translator_lifecycle.stop(paths.proxy_pidfile(), "127.0.0.1", profile.port)
+    if stopped:
+        print(f"Translator stopped (port {profile.port} released).")
+    else:
+        print(f"Translator already stopped (port {profile.port} was free).")
+
+
 def main() -> None:
     """Dispatch the chosen subcommand from sys.argv.
 
@@ -265,6 +288,8 @@ def main() -> None:
         cmd_setup()
     elif cmd == "code":
         cmd_code(args[1] if len(args) > 1 else None)
+    elif cmd == "stop":
+        cmd_stop()
     else:
         print(__doc__)
         sys.exit(1)

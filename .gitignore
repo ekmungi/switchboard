@@ -25,3 +25,6 @@ Thumbs.db
 # Session scratch (remember plugin buffers/logs + SDD progress ledger) — local only
 .remember/
 .superpowers/
+
+# Local dev-tool binary (supertool CLI) dropped in repo root — not part of the project
+/supertool

@@ -84,6 +84,7 @@ All commands run via the `sb` alias (or `uv run python switchboard.py`).
 |---------|-------------|
 | `sb setup` | One-command, idempotent: installs the pinned engine into a switchboard-owned venv, resolves the OpenRouter key (prompt once → `~/.env_claude`), generates a default profile, starts the local proxy, and runs the tool-use gate. Ends "ready" or a clear failure. |
 | `sb code [<model>]` | Ensure the proxy is up (daemon reused) and launch `claude` against it via a per-session env — nothing written to `settings.json`. Optional model switches the main tier (refuses `anthropic/*` / passthrough). |
+| `sb stop` | Stop the local proxy daemon: signals the recorded PID, clears the pidfile, and waits (synchronously) for the loopback port to be released. Reports whether a live daemon was stopped or it was already down. No active profile → nothing to stop. |
 | `sb doctor` | With the translator set up: engine-pin, proxy health, cost-safety (no `anthropic/*`, no passthrough), nothing-global (`settings.json` clean), a real tool-use round-trip, and a spend-cap advisory. |
 
 **Legacy (CCR-driving, deprecated):**

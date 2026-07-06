@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from switchboard import cli, launch, profiles, setup, translator_checks
+from switchboard import cli, launch, profiles, setup, translator_checks, translator_lifecycle
 from switchboard.checks import Check
 from switchboard.launch import LaunchResult
 from switchboard.setup import SetupResult
@@ -118,3 +118,44 @@ class TestDoctorDispatch:
         with pytest.raises(SystemExit) as exc:
             cli.main()
         assert exc.value.code == 1
+
+
+class TestStopDispatch:
+    """`sb stop` loads the active profile for the port and tears down the proxy."""
+
+    def test_reports_stopped_and_passes_profile_port(self, monkeypatch, capsys):
+        # A live daemon: stop() returns True. cmd_stop must call it with the
+        # profile's loopback host+port and report the teardown.
+        prof = profiles.default_profile("z-ai/glm-4.6", "deepseek/deepseek-chat")
+        monkeypatch.setattr(profiles, "load", lambda path: prof)
+        seen = {}
+        def fake_stop(pidfile, host, port, **kwargs):
+            seen["host"] = host
+            seen["port"] = port
+            return True
+        monkeypatch.setattr(translator_lifecycle, "stop", fake_stop)
+        monkeypatch.setattr(sys, "argv", ["sb", "stop"])
+        cli.main()
+        assert seen == {"host": "127.0.0.1", "port": prof.port}
+        assert "released" in capsys.readouterr().out.lower()
+
+    def test_reports_already_down_when_nothing_to_kill(self, monkeypatch, capsys):
+        # No live PID: stop() returns False. cmd_stop reports it was already down.
+        prof = profiles.default_profile("z-ai/glm-4.6", "deepseek/deepseek-chat")
+        monkeypatch.setattr(profiles, "load", lambda path: prof)
+        monkeypatch.setattr(translator_lifecycle, "stop", lambda *a, **k: False)
+        monkeypatch.setattr(sys, "argv", ["sb", "stop"])
+        cli.main()
+        assert "already" in capsys.readouterr().out.lower()
+
+    def test_no_profile_message_and_no_stop_attempt(self, monkeypatch, capsys):
+        # Nothing set up: no profile means no port to target -- cmd_stop must NOT
+        # call stop() (it would guess a port) and must print a clear hint.
+        monkeypatch.setattr(profiles, "load", lambda path: None)
+        called = []
+        monkeypatch.setattr(translator_lifecycle, "stop", lambda *a, **k: called.append(True))
+        monkeypatch.setattr(sys, "argv", ["sb", "stop"])
+        cli.main()
+        out = capsys.readouterr().out.lower()
+        assert "no active profile" in out
+        assert called == []

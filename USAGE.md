@@ -9,6 +9,7 @@ the full OpenRouter catalog with nothing written to your global config.
 sb setup                        # once: pinned engine + key + default profile + proxy + tool-use gate
 sb code                         # launch claude on the default model via the local proxy
 sb code z-ai/glm-4.6            # ...or choose a model for this session (switches the main tier)
+sb stop                         # stop the local proxy daemon (waits for the port to free)
 sb doctor                       # engine pin, proxy, cost-safety, nothing-global, tool-use gate
 claude                          # plain claude = your Max subscription, untouched
 ```
@@ -16,7 +17,8 @@ claude                          # plain claude = your Max subscription, untouche
 - **Key:** `sb setup` reads `OPENROUTER_API_KEY` from `~/.env_claude`, or prompts once
   and appends it there. It never lands in `~/.claude/settings.json` and is never printed.
 - **Reused daemon:** the proxy (loopback `127.0.0.1:4000` by default) starts once and is
-  reused across `sb code` launches; teardown is just closing the `claude` process.
+  reused across `sb code` launches. Closing `claude` leaves the proxy running for the next
+  launch; run `sb stop` to shut it down explicitly (it waits for the port to be released).
 - **Model switch:** `sb code <model>` persists the new main tier, regenerates the proxy
   config, and restarts the proxy. `anthropic/*` and passthrough wildcards are refused
   (they'd leak metered Claude pricing).

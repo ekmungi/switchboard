@@ -27,9 +27,13 @@ commands are retained but **deprecated** (see below).
   sets a **per-session** env (`ANTHROPIC_BASE_URL` → the loopback proxy, a placeholder
   auth token that is *not* the OpenRouter key, and the per-tier model strings) and runs
   `claude`. **Nothing is written to `~/.claude/settings.json`** — plain `claude` (Max)
-  is untouched; teardown is just closing the process. An optional model arg switches the
-  main tier (refuses `anthropic/*` and passthrough wildcards; regenerates config +
-  restarts the proxy). Surfaces the `/logout` cached-login advisory (R-007).
+  is untouched. An optional model arg switches the main tier (refuses `anthropic/*` and
+  passthrough wildcards; regenerates config + restarts the proxy). Surfaces the `/logout`
+  cached-login advisory (R-007).
+- **`sb stop`** — stop the local proxy daemon: loads the active profile for the port,
+  signals the recorded PID, clears the pidfile, and waits (synchronously) for the loopback
+  port to be released. Reports whether a live daemon was stopped or it was already down;
+  with no active profile there is nothing to stop.
 - **`sb doctor`** now reports the **translator's** health when a profile exists:
   engine pinned to `1.81.14`, proxy health, **cost-safety** (no tier resolves to a
   Claude-priced `anthropic/*` model and no passthrough catch-all — R5a), **nothing
