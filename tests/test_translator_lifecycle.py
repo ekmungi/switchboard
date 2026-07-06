@@ -269,6 +269,19 @@ class TestStart:
             )
         spawn.assert_not_called()
 
+    def test_force_skips_reuse_probe_and_spawns_fresh(self, tmp_path):
+        """force=True (post-restart) must spawn even if a dying daemon still answers,
+        so a model switch never reuses the stale-config proxy."""
+        cfg, pidfile, log = self._paths(tmp_path)
+        spawned = []
+        st = tl.start(
+            FakeEngine(), config_path=cfg, host="127.0.0.1", port=4000,
+            pidfile=pidfile, logfile=log, api_key="sk-or",
+            spawn=lambda argv, **kw: spawned.append(1) or FakeProc(pid=9),
+            is_up=probe_seq([True, True]), sleep=lambda s: None, attempts=5, force=True,
+        )
+        assert spawned == [1] and st.reused is False and st.running is True
+
 
 # ---------------------------------------------------------------------------
 # stop
@@ -282,10 +295,29 @@ class TestStop:
         pidfile = tmp_path / "proxy.pid"
         tl.write_pid(pidfile, 555)
         killed = []
-        ok = tl.stop(pidfile, "127.0.0.1", 4000, killer=lambda pid, sig: killed.append((pid, sig)))
+        ok = tl.stop(
+            pidfile, "127.0.0.1", 4000,
+            killer=lambda pid, sig: killed.append((pid, sig)),
+            is_up=lambda: False, sleep=lambda s: None,
+        )
         assert ok is True
         assert killed and killed[0][0] == 555
         assert not pidfile.exists()
+
+    def test_waits_for_port_release_after_kill(self, tmp_path):
+        """stop() is synchronous: it polls until the port frees so a following
+        start() spawns fresh instead of reusing the dying daemon."""
+        pidfile = tmp_path / "proxy.pid"
+        tl.write_pid(pidfile, 555)
+        slept = []
+        ok = tl.stop(
+            pidfile, "127.0.0.1", 4000,
+            killer=lambda pid, sig: None,
+            is_up=probe_seq([True, True, False]),  # still bound for 2 polls, then freed
+            sleep=lambda s: slept.append(s),
+        )
+        assert ok is True
+        assert len(slept) == 2  # waited until the port was released
 
     def test_returns_false_when_no_pid(self, tmp_path):
         killer = MagicMock()

@@ -156,6 +156,7 @@ def run_code(
         pidfile=paths.proxy_pidfile(root),
         logfile=paths.proxy_logfile(root),
         api_key=key,
+        force=changed,  # after a model switch, never reuse the just-stopped stale daemon
     )
     if not status.running:
         return _fail(f"proxy did not become ready on {LOOPBACK}:{profile.port}", profile)

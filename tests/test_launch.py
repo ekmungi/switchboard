@@ -113,6 +113,24 @@ class TestRunCode:
         )
         assert result.ok is True and stopped == []
 
+    def test_model_change_forces_fresh_start(self, tmp_path):
+        """After a model switch, start() is called with force=True (no stale reuse)."""
+        seen = {}
+        def rec_start(engine, **kw):
+            seen["force"] = kw.get("force", False)
+            return ProxyStatus(running=True, pid=1, host=kw["host"], port=kw["port"])
+        result, _ = run_code(tmp_path, arg="deepseek/deepseek-chat", start=rec_start)
+        assert result.ok is True and seen["force"] is True
+
+    def test_no_change_does_not_force(self, tmp_path):
+        """Plain `sb code` reuses the daemon: start() is not forced."""
+        seen = {}
+        def rec_start(engine, **kw):
+            seen["force"] = kw.get("force", False)
+            return ProxyStatus(running=True, pid=1, host=kw["host"], port=kw["port"])
+        result, _ = run_code(tmp_path, start=rec_start)
+        assert result.ok is True and seen["force"] is False
+
     def test_refuses_cost_unsafe_model(self, tmp_path):
         """`sb code anthropic/...` is refused (would leak metered Claude pricing)."""
         result, launched = run_code(tmp_path, arg="anthropic/claude-3-5-sonnet")

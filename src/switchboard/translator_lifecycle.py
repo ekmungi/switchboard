@@ -156,13 +156,16 @@ def start(
     attempts: int = 60,
     delay: float = 0.5,
     platform_name: str | None = None,
+    force: bool = False,
 ) -> ProxyStatus:
     """Ensure the proxy is up, reusing a running daemon or spawning a fresh one.
 
     Reuse (R2): if the proxy already answers health, return immediately with
-    reused=True and never spawn. Otherwise spawn the engine detached, redirect its
-    output to *logfile*, record the PID, and poll readiness up to *attempts* *
-    *delay* -- bailing early if the child exits.
+    reused=True and never spawn -- UNLESS *force* is set, which skips the reuse
+    probe and always spawns fresh (used right after a stop() when switching models,
+    so a dying old-config daemon is never reused). Otherwise spawn the engine
+    detached, redirect its output to *logfile*, record the PID, and poll readiness
+    up to *attempts* * *delay* -- bailing early if the child exits.
 
     Readiness uses HTTP health (`proxy_health`), not a bare TCP connect: LiteLLM
     binds the port early in its ~10s cold start, so a TCP probe would report "up"
@@ -189,7 +192,7 @@ def start(
         raise ValueError(f"refusing to bind non-loopback host {host!r} (SPEC-005 R2: loopback only)")
 
     probe = is_up or (lambda: proxy_health(host, port))
-    if probe():
+    if not force and probe():
         return ProxyStatus(running=True, pid=read_pid(pidfile), host=host, port=port, reused=True)
 
     env = engine.spawn_env(os.environ if base_env is None else base_env, api_key)
@@ -226,16 +229,24 @@ def stop(
     port: int,
     killer: Callable[[int, int], object] = os.kill,
     is_up: Callable[[], bool] | None = None,
+    sleep: Callable[[float], object] = time.sleep,
+    attempts: int = 20,
+    delay: float = 0.25,
 ) -> bool:
-    """Terminate the recorded proxy PID and clear the pidfile.
+    """Terminate the recorded proxy PID, clear the pidfile, and wait for port release.
 
     Returns True when a live PID was signaled, False when there was no PID or the
     process was already gone. The pidfile is always cleared (stale entries removed).
+    Synchronous teardown: after signaling, it polls until the port frees (up to
+    *attempts* * *delay*). TerminateProcess is asynchronous, so without this wait a
+    following start() could reuse the still-bound dying daemon (a model-switch race).
 
     Args:
-        killer: Injected os.kill-like callable. On Windows os.kill with SIGTERM
-                maps to TerminateProcess, which stops the daemon unconditionally.
+        killer:  Injected os.kill-like callable. On Windows os.kill with SIGTERM
+                 maps to TerminateProcess, which stops the daemon unconditionally.
+        is_up/sleep: Injected seams for the port-release wait (defaults probe TCP).
     """
+    probe = is_up or (lambda: proxy_running(host, port))
     pid = read_pid(pidfile)
     stopped = False
     if pid is not None:
@@ -245,4 +256,9 @@ def stop(
         except (ProcessLookupError, OSError):
             stopped = False
     clear_pid(pidfile)
+    if stopped:
+        for _ in range(attempts):
+            if not probe():
+                break
+            sleep(delay)
     return stopped
